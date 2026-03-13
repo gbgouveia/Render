@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block titulo %}Checkout{% endblock %}
+
+{% block conteudos %}
+
+<div class="container py-5">
+
+  <h2 class="letras mb-4">Checkout</h2>
+
+  <div class="row g-4">
+
+    <!-- COL ESQUERDA -->
+    <div class="col-lg-7">
+
+      <div class="card p-4 shadow-sm mb-3">
+        <h5 class="mb-3">Itens do Carrinho</h5>
+
+        {% for c in itens %}
+          <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+            <div>
+              <div class="fw-semibold">{{ c.item.nome }}</div>
+              <small class="text-muted">Qtd: {{ c.quantidade }}</small>
+            </div>
+
+            <div class="fw-bold">
+              R$ {{ "%.2f"|format(c.item.preco * c.quantidade) }}
+            </div>
+          </div>
+        {% endfor %}
+
+        <div class="d-flex justify-content-between mt-3">
+          <div class="fw-semibold">Subtotal</div>
+          <div class="fw-bold">R$ {{ "%.2f"|format(total_produtos) }}</div>
+        </div>
+      </div>
+
+      <div class="card p-4 shadow-sm">
+        <h5 class="mb-3">Frete</h5>
+
+        {% if endereco_principal %}
+          <div class="alert alert-light border">
+            <div class="fw-semibold">Endereço principal</div>
+            <div>{{ endereco_principal.rua }}, {{ endereco_principal.numero }}</div>
+            <div>{{ endereco_principal.bairro }} - {{ endereco_principal.cidade }}/{{ endereco_principal.estado }}</div>
+            <div>CEP: <span id="cepEndereco">{{ endereco_principal.cep }}</span></div>
+          </div>
+        {% else %}
+          <div class="alert alert-warning">
+            Você precisa cadastrar um endereço principal no perfil.
+          </div>
+        {% endif %}
+
+        <div class="d-flex gap-2">
+          <input id="cepFrete" class="form-control" placeholder="Digite o CEP (somente números)">
+          <button class="btn btn-success" id="btnBuscarFrete" type="button">Buscar frete</button>
+        </div>
+
+        <div id="fretesBox" class="mt-3"></div>
+
+        {% if frete_escolhido %}
+          <div class="mt-3 alert alert-success">
+            <div class="fw-semibold">Frete selecionado:</div>
+            <div>{{ frete_escolhido.nome }} • R$ {{ frete_escolhido.valor }} • {{ frete_escolhido.prazo }} dia(s)</div>
+          </div>
+
+          <form method="POST" action="{{ url_for('api_frete_limpar') }}" onsubmit="return limparFrete(event)" class="mt-2">
+            <button type="submit" class="btn btn-outline-secondary btn-sm">
+              Trocar frete
+            </button>
+          </form>
+        {% endif %}
+
+      </div>
+
+    </div>
+
+    <!-- COL DIREITA -->
+    <div class="col-lg-5">
+
+      <div class="card p-4 shadow-sm">
+        <h5 class="mb-3">Resumo</h5>
+
+        <div class="d-flex justify-content-between">
+          <span>Subtotal</span>
+          <strong>R$ {{ "%.2f"|format(total_produtos) }}</strong>
+        </div>
+
+        <div class="d-flex justify-content-between mt-2">
+          <span>Frete</span>
+          <strong>
+            {% if frete_escolhido %}
+              R$ {{ "%.2f"|format(frete_valor) }}
+            {% else %}
+              Não selecionado
+            {% endif %}
+          </strong>
+        </div>
+
+        <hr>
+
+        <div class="d-flex justify-content-between">
+          <span class="fw-semibold">Total</span>
+          <span class="fw-bold fs-5">R$ {{ "%.2f"|format(total_final) }}</span>
+        </div>
+
+        {% if not endereco_principal %}
+          <div class="alert alert-warning mt-3 mb-0">
+            Cadastre um endereço principal para continuar.
+          </div>
+        {% endif %}
+
+        {% if not frete_escolhido %}
+          <div class="alert alert-warning mt-3 mb-0">
+            Selecione um frete antes de pagar.
+          </div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('checkout_stripe') }}" class="mt-4">
+          <button
+            type="submit"
+            class="btn btn-success w-100"
+            {% if not endereco_principal or not frete_escolhido %}disabled{% endif %}
+          >
+            Pagar com Stripe
+          </button>
+        </form>
+
+        <small class="text-muted d-block mt-2">
+          Você será redirecionado para a página segura da Stripe para concluir o pagamento.
+        </small>
+
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<script>
+function onlyDigits(s){
+  return (s || "").replace(/\D/g, "");
+}
+
+async function buscarFrete(){
+  const cepInput = document.getElementById("cepFrete");
+  const fretesBox = document.getElementById("fretesBox");
+
+  let cep = onlyDigits(cepInput.value);
+
+  if(!cep){
+    const cepEndereco = document.getElementById("cepEndereco");
+    if(cepEndereco) cep = onlyDigits(cepEndereco.textContent);
+  }
+
+  if(cep.length !== 8){
+    fretesBox.innerHTML = `<div class="alert alert-danger">CEP inválido</div>`;
+    return;
+  }
+
+  fretesBox.innerHTML = `
+    <div class="text-center">
+      <div class="spinner-border text-success"></div>
+      <p class="mt-2 mb-0">Calculando frete...</p>
+    </div>
+  `;
+
+  try{
+    const res = await fetch("/api/frete/opcoes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cep })
+    });
+
+    const data = await res.json();
+
+    if(data.erro){
+      fretesBox.innerHTML = `<div class="alert alert-warning">${data.erro}</div>`;
+      return;
+    }
+
+    const fretes = data.fretes || [];
+
+    if(!fretes.length){
+      fretesBox.innerHTML = `<div class="alert alert-warning">Nenhuma opção de frete.</div>`;
+      return;
+    }
+
+    fretesBox.innerHTML = fretes.map((f) => `
+      <div class="border rounded p-3 mb-2 d-flex justify-content-between align-items-center">
+        <div>
+          <div class="fw-semibold">${f.nome}</div>
+          <small class="text-muted">Prazo: ${f.prazo} dia(s)</small>
+        </div>
+
+        <div class="text-end">
+          <div class="fw-bold">R$ ${Number(f.valor).toFixed(2)}</div>
+          <button
+            type="button"
+            class="btn btn-sm btn-success mt-2"
+            onclick='selecionarFrete(${JSON.stringify(f)})'
+          >
+            Selecionar
+          </button>
+        </div>
+      </div>
+    `).join("");
+
+  }catch(e){
+    fretesBox.innerHTML = `<div class="alert alert-danger">Erro ao calcular frete</div>`;
+  }
+}
+
+async function selecionarFrete(f){
+  const fretesBox = document.getElementById("fretesBox");
+
+  try{
+    const res = await fetch("/api/frete/selecionar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(f)
+    });
+
+    const data = await res.json();
+
+    if(!data.success){
+      fretesBox.insertAdjacentHTML("afterbegin", `<div class="alert alert-danger">Erro ao selecionar frete</div>`);
+      return;
+    }
+
+    window.location.reload();
+
+  }catch(e){
+    fretesBox.insertAdjacentHTML("afterbegin", `<div class="alert alert-danger">Erro ao selecionar frete</div>`);
+  }
+}
+
+async function limparFrete(event){
+  event.preventDefault();
+
+  try{
+    const res = await fetch("/api/frete/limpar", {
+      method: "POST"
+    });
+
+    const data = await res.json();
+
+    if(data.success){
+      window.location.reload();
+    }
+  }catch(e){}
+  return false;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const btn = document.getElementById("btnBuscarFrete");
+  if(btn){
+    btn.addEventListener("click", buscarFrete);
+  }
+});
+</script>
+
+{% endblock %}

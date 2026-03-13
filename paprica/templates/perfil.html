@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Perfil
+{% endblock %}
+
+{% block conteudos %}
+
+<div class="container py-5">
+
+  <div class="row justify-content-center">
+    <div class="col-12 col-md-10 col-lg-8">
+
+      <div class="card profile-card p-4 shadow-sm">
+
+        <h3 class="text-center mb-4">Perfil do Usuário</h3>
+
+        <hr>
+
+        <!-- DADOS DO USUÁRIO -->
+        <div class="row">
+          <div class="col-md-6">
+            <p><strong>Usuário:</strong><br> {{ current_user.usuario }}</p>
+          </div>
+          <div class="col-md-6">
+            <p><strong>Email:</strong><br> {{ current_user.email }}</p>
+          </div>
+        </div>
+
+        <hr>
+
+        <!-- ENDEREÇOS -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Meus Endereços</h5>
+          <a href="{{ url_for('novo_endereco') }}" class="btn btn-sm btn-success">
+            + Adicionar Endereço
+          </a>
+        </div>
+
+        {% if current_user.enderecos %}
+
+          {% for endereco in current_user.enderecos %}
+            <div class="card mb-3 p-3 border">
+
+              <div class="d-flex justify-content-between gap-3 flex-wrap">
+
+                <div>
+                  {% if endereco.principal %}
+                    <span class="badge bg-primary mb-2">Endereço Principal</span>
+                  {% endif %}
+
+                  <p class="mb-1">
+                    <strong>{{ endereco.rua }}, {{ endereco.numero }}</strong>
+                  </p>
+
+                  <p class="mb-1">
+                    {{ endereco.bairro }} - {{ endereco.cidade }}/{{ endereco.estado }}
+                  </p>
+
+                  <p class="mb-0">
+                    CEP: {{ endereco.cep }}
+                    {% if endereco.complemento %}
+                      | {{ endereco.complemento }}
+                    {% endif %}
+                  </p>
+                </div>
+
+                <div class="text-end ms-auto">
+
+                  <a href="{{ url_for('editar_endereco', id=endereco.id) }}"
+                     class="btn btn-sm btn-outline-secondary mb-2">
+                    Editar
+                  </a>
+
+                  {% if not endereco.principal %}
+                    <form method="POST"
+                          action="{{ url_for('definir_endereco_principal', id=endereco.id) }}"
+                          class="d-inline">
+                      <button type="submit" class="btn btn-sm btn-outline-primary mb-2">
+                        Tornar Principal
+                      </button>
+                    </form>
+                  {% endif %}
+
+                  <form method="POST"
+                        action="{{ url_for('excluir_endereco', id=endereco.id) }}"
+                        class="d-inline"
+                        onsubmit="return confirm('Tem certeza que deseja excluir este endereço?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger mb-2">
+                      Excluir
+                    </button>
+                  </form>
+
+                </div>
+
+              </div>
+
+            </div>
+          {% endfor %}
+
+        {% else %}
+          <div class="alert alert-warning">
+            Você ainda não cadastrou nenhum endereço.
+          </div>
+        {% endif %}
+
+        <hr>
+
+        <!-- PEDIDOS / PRODUTOS COMPRADOS -->
+        <h5 class="mb-3">Meus Pedidos</h5>
+
+        {% if pedidos %}
+          {% for p in pedidos %}
+            <div class="card mb-3 p-3 border">
+              <div class="d-flex justify-content-between flex-wrap gap-2">
+                <div>
+                  <div><strong>Pedido #{{ p.id }}</strong></div>
+                  <small class="text-muted">
+                    {{ p.data_criacao.strftime("%d/%m/%Y %H:%M") if p.data_criacao else "" }}
+                    • Status: {{ p.status }}
+                  </small>
+                </div>
+
+                <div class="text-end">
+                  <div class="fw-bold">Total: R$ {{ "%.2f"|format(p.total_final) }}</div>
+                  <small class="text-muted">
+                    Frete: R$ {{ "%.2f"|format(p.frete_valor) }}
+                  </small>
+                </div>
+              </div>
+
+              {% if p.itens %}
+                <ul class="list-group mt-3">
+                  {% for i in p.itens %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                      <div>
+                        <div class="fw-semibold">{{ i.nome_produto }}</div>
+                        <small class="text-muted">Qtd: {{ i.quantidade }}</small>
+                      </div>
+
+                      <span class="badge bg-success">
+                        R$ {{ "%.2f"|format(i.preco_unitario) }}
+                      </span>
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="text-muted mt-3 mb-0">Sem itens nesse pedido.</p>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="text-muted">Nenhum pedido ainda.</p>
+        {% endif %}
+
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

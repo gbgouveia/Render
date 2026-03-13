@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>{% block titulo %}{% endblock %}</title>
+
+  <!-- Bootstrap -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+
+  <!-- Seu CSS -->
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body class="body-principal">
+
+<!-- ===================== NAV SUPERIOR ===================== -->
+<nav class="top-navbar">
+  <div class="container-fluid nav-container">
+
+    <!-- Logo -->
+    <div class="nav-left">
+      <a href="{{ url_for('page_home') }}">
+        <img src="/static/image/LOGO.png" alt="Logo Ecommerce" class="logo-navbar">
+      </a>
+    </div>
+
+    <!-- Busca -->
+    <div class="nav-center">
+      <form class="search-wrapper" method="GET" action="{{ url_for('page_produto') }}">
+        <input
+          type="text"
+          name="q"
+          value="{{ request.args.get('q', '') }}"
+          placeholder="Busque por nome, descrição ou código de barras"
+        >
+        <button type="submit">
+          <i class="bi bi-search"></i>
+        </button>
+      </form>
+    </div>
+
+    <!-- Direita -->
+    <div class="nav-right">
+
+      <!-- Botão CEP -->
+      <div class="nav-item-custom" data-bs-toggle="modal" data-bs-target="#cepModal" style="cursor:pointer;">
+        <i class="bi bi-geo-alt"></i>
+      </div>
+
+      {% if current_user.is_authenticated %}
+        <a href="{{ url_for('page_perfil') }}" class="nav-item-custom text-decoration-none">
+          <i class="bi bi-person"></i>
+          <span>Olá, {{ current_user.usuario }}</span>
+        </a>
+
+        <a href="{{ url_for('logout') }}" class="nav-item-custom text-decoration-none">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Sair</span>
+        </a>
+      {% else %}
+        <a href="{{ url_for('page_login') }}" class="nav-item-custom text-decoration-none">
+          <i class="bi bi-person"></i>
+          <span>Entre</span>
+        </a>
+
+        <a href="{{ url_for('page_cadastro') }}" class="nav-item-custom text-decoration-none">
+          <span>Cadastre-se</span>
+        </a>
+      {% endif %}
+
+      <a href="{{ url_for('meus_favoritos') }}" class="nav-item-custom text-decoration-none">
+        <i class="bi bi-heart"></i>
+        <span>Meus Favoritos</span>
+      </a>
+
+      <!-- ===================== MINI CART ===================== -->
+      <div class="mini-cart-wrapper">
+
+        <a href="#" id="cartToggle" class="nav-item-custom text-decoration-none cart-icon">
+          <i class="bi bi-cart3"></i>
+
+          <span class="cart-badge {% if carrinho_quantidade <= 0 %}d-none{% endif %}" id="cartBadge">
+            <span id="cartCount">{{ carrinho_quantidade }}</span>
+          </span>
+        </a>
+
+        <div class="mini-cart" id="miniCart" aria-hidden="true">
+
+          <h6 class="mb-3">
+            <span id="miniCartQtd">{{ carrinho_quantidade }}</span> produto(s)
+          </h6>
+
+          <div id="miniCartBody">
+            {% if carrinho_itens %}
+              {% for c in carrinho_itens %}
+                <div class="mini-cart-item" data-cart-id="{{ c.id }}">
+
+                  {% if c.item.imagem %}
+                    <img src="{{ url_for('static', filename='uploads/' + c.item.imagem) }}" alt="{{ c.item.nome }}">
+                  {% else %}
+                    <img src="{{ url_for('static', filename='image/sem-imagem.png') }}" alt="Sem imagem">
+                  {% endif %}
+
+                  <div class="mini-cart-info">
+                    <small>{{ c.item.nome }}</small>
+
+                    <strong>
+                      R$ {{ "%.2f"|format(c.item.preco * c.quantidade) }}
+                    </strong>
+
+                    <div class="qtd-form">
+                      <input type="number"
+                             class="input-qtd js-cart-qty"
+                             min="1"
+                             value="{{ c.quantidade }}"
+                             data-cart-id="{{ c.id }}">
+                    </div>
+                  </div>
+
+                  <button type="button"
+                          class="btn-trash js-cart-remove"
+                          data-cart-id="{{ c.id }}"
+                          title="Remover">
+                    <i class="bi bi-trash"></i>
+                  </button>
+
+                </div>
+              {% endfor %}
+
+              <div class="mini-cart-footer">
+                <small>
+                  Total: R$
+                  <span id="miniCartTotal">{{ "%.2f"|format(carrinho_total) }}</span>
+                </small>
+
+                <a href="{{ url_for('checkout') }}" class="btn btn-mini-cart">
+                  Finalizar
+                </a>
+              </div>
+
+            {% else %}
+              <p class="text-muted" id="miniCartEmpty">
+                Seu carrinho está vazio
+              </p>
+            {% endif %}
+          </div>
+
+        </div>
+
+      </div>
+      <!-- ===================== /MINI CART ===================== -->
+
+    </div>
+  </div>
+</nav>
+
+<!-- Linha verde -->
+<div class="green-line"></div>
+
+<!-- ===================== NAV INFERIOR ===================== -->
+<div class="category-navbar">
+  <div class="container-fluid category-container justify-content-center">
+    <a href="{{ url_for('page_home') }}">Home</a>
+    <a href="{{ url_for('page_produto') }}">Produtos</a>
+  </div>
+</div>
+
+<!-- ===================== FLASH ===================== -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{category}} alert-dismissible fade show m-3" role="alert">
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- ===================== CONTEÚDO ===================== -->
+{% block conteudos %}{% endblock %}
+
+<!-- ===================== MODAL CEP ===================== -->
+<div class="modal fade" id="cepModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-4 rounded-4">
+
+      <div class="modal-header border-0">
+        <h5 class="modal-title">
+          Digite seu CEP para obter o melhor prazo e frete
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="d-flex gap-2">
+          <input type="text" id="cepInput" class="form-control" placeholder="Digite o seu CEP">
+          <button type="button" class="btn btn-success" id="btnCalcularFrete">OK</button>
+        </div>
+
+        <div id="resultadoFrete" class="mt-3"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="footer-clean">
+  <div class="container py-5">
+
+    <div class="row gy-4 footer-top">
+
+      <!-- COLUNA LOGO -->
+      <div class="col-12 col-md-6 col-lg-3">
+        <div class="footer-brand-box">
+          <img src="{{ url_for('static', filename='image/LOGO.png') }}" alt="Páprica" class="footer-logo-clean">
+        </div>
+
+        <h6 class="footer-heading-social mt-4">REDES SOCIAIS</h6>
+
+        <div class="footer-social-clean">
+          <a href="#" aria-label="Facebook"><i class="bi bi-facebook"></i></a>
+          <a href="#" aria-label="YouTube"><i class="bi bi-youtube"></i></a>
+          <a href="#" aria-label="Instagram"><i class="bi bi-instagram"></i></a>
+          <a href="#" aria-label="TikTok"><i class="bi bi-tiktok"></i></a>
+        </div>
+      </div>
+
+      <!-- COLUNA INSTITUCIONAL -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <h6 class="footer-title-clean">INSTITUCIONAL</h6>
+        <ul class="footer-links-clean">
+          <li><a href="{{ url_for('page_home') }}">Home</a></li>
+          <li><a href="{{ url_for('page_produto') }}">Produtos</a></li>
+        </ul>
+      </div>
+
+      <!-- COLUNA POLÍTICAS -->
+      <div class="col-12 col-md-6 col-lg-3">
+        <h6 class="footer-title-clean">POLÍTICAS</h6>
+        <ul class="footer-links-clean">
+          <li><a href="#">Política de Devolução</a></li>
+          <li><a href="#">Regras de Frete</a></li>
+          <li><a href="#">Política de Privacidade</a></li>
+        </ul>
+      </div>
+
+      <!-- COLUNA ATENDIMENTO -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <h6 class="footer-title-clean">ATENDIMENTO</h6>
+        <ul class="footer-links-clean">
+          <li><a href="#">Termos e Condições</a></li>
+          <li><a href="#">FAQ</a></li>
+          <li><a href="#">Suporte</a></li>
+          <li class="footer-contact-clean">(61) 9 9828-0525</li>
+          <li class="footer-contact-clean">papricaprodutosnaturais@gmail.com</li>
+        </ul>
+      </div>
+
+      <!-- COLUNA PAGAMENTOS -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <h6 class="footer-title-clean">FORMAS DE PAGAMENTO</h6>
+        <div class="footer-payments-clean">
+          <span>VISA</span>
+          <span>Mastercard</span>
+          <span>Elo</span>
+          <span>Boleto</span>
+          <span>Pix</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="footer-bottom-clean mt-4">
+      <p>
+        As condições comerciais, produtos e preços do site são exclusivos para venda no e-commerce. Poderão haver diferenças nas lojas físicas. Os preços dos produtos estão sujeitos à alteração sem aviso prévio.
+      </p>
+      <p>
+        A Páprica se reserva o direito de corrigir qualquer possível erro de digitação ou gráfico e caso haja divergências entre os valores ofertados nos e-mails promocionais e valores do site, prevalecem as informações do site.
+      </p>
+      <p>
+        Razão Social: PAPRICA PRODUTOS NATURAIS LTDA • CNPJ: 44.746.453/0001-37 • Endereço: RUA 12 CHACARA 312 LOTE 21 LOJA 06, 
+        Município: SETOR HABITACIONAL VICENTE PIRES,
+        Estado: BRASILIA -DF
+      </p>
+    </div>
+
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+/* =========================================================
+   MINI CART (AJAX) + FECHAR AO CLICAR FORA
+   ========================================================= */
+
+function moneyBRL(v){
+  const n = Number(v || 0);
+  return n.toFixed(2);
+}
+
+function openMiniCart(){
+  const cart = document.getElementById("miniCart");
+  cart.style.display = "block";
+  cart.setAttribute("aria-hidden", "false");
+}
+
+function closeMiniCart(){
+  const cart = document.getElementById("miniCart");
+  cart.style.display = "none";
+  cart.setAttribute("aria-hidden", "true");
+}
+
+function toggleMiniCart(){
+  const cart = document.getElementById("miniCart");
+  const isOpen = cart.style.display === "block";
+  if(isOpen) closeMiniCart();
+  else openMiniCart();
+}
+
+function setBadgeCount(qtd){
+  const badge = document.getElementById("cartBadge");
+  const count = document.getElementById("cartCount");
+  const miniQtd = document.getElementById("miniCartQtd");
+
+  miniQtd.textContent = qtd;
+
+  if (qtd > 0) {
+    badge.classList.remove("d-none");
+    count.textContent = qtd;
+  } else {
+    badge.classList.add("d-none");
+    count.textContent = "0";
+  }
+}
+
+function bindMiniCartEvents(){
+  document.querySelectorAll(".js-cart-qty").forEach(inp => {
+    inp.addEventListener("change", (e) => {
+      const cartId = e.target.getAttribute("data-cart-id");
+      cartUpdateQty(cartId, e.target.value);
+    });
+  });
+
+  document.querySelectorAll(".js-cart-remove").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const cartId = e.currentTarget.getAttribute("data-cart-id");
+      cartRemove(cartId);
+    });
+  });
+}
+
+function renderMiniCartFromJSON(data){
+  const qtd = data.qtd || 0;
+  setBadgeCount(qtd);
+
+  const body = document.getElementById("miniCartBody");
+  const itens = data.itens || [];
+
+  if (!itens.length) {
+    body.innerHTML = `<p class="text-muted" id="miniCartEmpty">Seu carrinho está vazio</p>`;
+    return;
+  }
+
+  let html = "";
+
+  itens.forEach(i => {
+    const imgHTML = i.imagem
+      ? `<img src="/static/uploads/${i.imagem}" alt="${i.nome}">`
+      : `<img src="/static/image/sem-imagem.png" alt="Sem imagem">`;
+
+    html += `
+      <div class="mini-cart-item" data-cart-id="${i.cart_id}">
+        ${imgHTML}
+
+        <div class="mini-cart-info">
+          <small>${i.nome}</small>
+          <strong>R$ ${moneyBRL(i.subtotal)}</strong>
+
+          <div class="qtd-form">
+            <input type="number"
+                   class="input-qtd js-cart-qty"
+                   min="1"
+                   value="${i.quantidade}"
+                   data-cart-id="${i.cart_id}">
+          </div>
+        </div>
+
+        <button type="button" class="btn-trash js-cart-remove" data-cart-id="${i.cart_id}" title="Remover">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    `;
+  });
+
+  html += `
+    <div class="mini-cart-footer">
+      <small>Total: R$ <span id="miniCartTotal">${moneyBRL(data.total || 0)}</span></small>
+      <a href="/checkout" class="btn btn-mini-cart">Finalizar</a>
+    </div>
+  `;
+
+  body.innerHTML = html;
+  bindMiniCartEvents();
+}
+
+async function refreshMiniCart(open=false){
+  try{
+    const res = await fetch("/api/carrinho/resumo", { method:"GET" });
+    if(!res.ok) return;
+
+    const data = await res.json();
+
+    if(data && data.success){
+      renderMiniCartFromJSON(data);
+      if(open) openMiniCart();
+    }
+  }catch(e){}
+}
+
+async function cartUpdateQty(cartId, quantidade){
+  const qtd = parseInt(quantidade || "1", 10);
+  const safeQtd = (isNaN(qtd) || qtd < 1) ? 1 : qtd;
+
+  const res = await fetch(`/api/carrinho/atualizar/${cartId}`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ quantidade: safeQtd })
+  });
+
+  if(res.ok){
+    await refreshMiniCart(false);
+  }
+}
+
+async function cartRemove(cartId){
+  const res = await fetch(`/api/carrinho/remover/${cartId}`, { method: "POST" });
+  if(res.ok){
+    await refreshMiniCart(false);
+  }
+}
+
+function closeMiniCartIfClickedOutside(e){
+  const cart = document.getElementById("miniCart");
+  const toggle = document.getElementById("cartToggle");
+  if (!cart.contains(e.target) && !toggle.contains(e.target)) {
+    closeMiniCart();
+  }
+}
+
+/* =========================================================
+   FRETE
+   ========================================================= */
+async function calcularFrete(){
+  const cep = (document.getElementById("cepInput").value || "").replace("-", "").trim();
+  const out = document.getElementById("resultadoFrete");
+
+  if(cep.length !== 8){
+    out.innerHTML = `<div class="alert alert-danger">CEP inválido</div>`;
+    return;
+  }
+
+  out.innerHTML = `
+    <div class="text-center">
+      <div class="spinner-border text-success"></div>
+      <p class="mt-2 mb-0">Calculando frete...</p>
+    </div>
+  `;
+
+  try{
+    const res = await fetch("/calcular-frete",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({cep})
+    });
+
+    const data = await res.json();
+
+    if(data.erro){
+      out.innerHTML = `<div class="alert alert-danger">${data.erro}</div>`;
+      return;
+    }
+
+    if(!Array.isArray(data) || data.length === 0){
+      out.innerHTML = `<div class="alert alert-warning">Nenhuma opção disponível.</div>`;
+      return;
+    }
+
+    out.innerHTML = data.map(f => `
+      <div class="border rounded p-2 mb-2">
+        <div><strong>${f.nome}</strong></div>
+        <div>R$ ${Number(f.valor).toFixed(2)} • ${f.prazo} dia(s)</div>
+      </div>
+    `).join("");
+
+  }catch(e){
+    out.innerHTML = `<div class="alert alert-danger">Erro ao calcular frete</div>`;
+  }
+}
+
+/* =========================================================
+   INIT
+   ========================================================= */
+document.addEventListener("DOMContentLoaded", () => {
+
+  const toggle = document.getElementById("cartToggle");
+  if(toggle){
+    toggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      toggleMiniCart();
+    });
+  }
+
+  document.addEventListener("click", closeMiniCartIfClickedOutside);
+
+  const btnFrete = document.getElementById("btnCalcularFrete");
+  if(btnFrete){
+    btnFrete.addEventListener("click", calcularFrete);
+  }
+
+  bindMiniCartEvents();
+  refreshMiniCart(false);
+});
+</script>
+
+</body>
+</html>

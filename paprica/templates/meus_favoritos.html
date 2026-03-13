@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Meus Favoritos
+{% endblock %}
+
+{% block conteudos %}
+
+<div class="container py-5">
+
+  <h2 class="letras mb-4">Minha Lista, Páprica</h2>
+
+  {% if favoritos %}
+
+    {% for fav in favoritos %}
+    <div class="card favorito-card mb-3 p-3">
+
+      <div class="d-flex align-items-center">
+
+        <!-- Imagem -->
+        {% if fav.item.imagem %}
+          <img
+            src="{{ url_for('static', filename='uploads/' + fav.item.imagem) }}"
+            class="img-fav"
+            alt="{{ fav.item.nome }}"
+          >
+        {% else %}
+          <img
+            src="{{ url_for('static', filename='image/sem-imagem.png') }}"
+            class="img-fav"
+            alt="Sem imagem"
+          >
+        {% endif %}
+
+        <!-- Info -->
+        <div class="ms-4 flex-grow-1">
+          <h6 class="mb-1">{{ fav.item.nome }}</h6>
+
+          <small class="text-muted text-decoration-line-through">
+            R$ {{ "%.2f"|format((fav.item.preco|float) * 1.3) }}
+          </small>
+
+          <h5 class="fw-bold mb-0">
+            R$ {{ "%.2f"|format(fav.item.preco|float) }}
+          </h5>
+        </div>
+
+        <!-- Botões -->
+        <div class="btn-wrapper">
+
+          <button
+            type="button"
+            class="btn btn-add js-fav-add"
+            data-item-id="{{ fav.item.id }}"
+          >
+            <i class="bi bi-cart"></i> Adicionar
+          </button>
+
+          <a
+            href="{{ url_for('remover_favorito', item_id=fav.item.id) }}"
+            class="btn-heart"
+            title="Remover dos favoritos"
+          >
+            <i class="bi bi-heart-fill"></i>
+          </a>
+
+        </div>
+
+      </div>
+
+    </div>
+    {% endfor %}
+
+  {% else %}
+
+    <div class="text-center py-5">
+      <h5 class="text-muted">Você ainda não adicionou favoritos</h5>
+    </div>
+
+  {% endif %}
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".js-fav-add").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const itemId = btn.getAttribute("data-item-id");
+
+      try {
+        const res = await fetch(`/api/carrinho/adicionar/${itemId}`, {
+          method: "POST"
+        });
+
+        if (!res.ok) return;
+
+        if (typeof refreshMiniCart === "function") {
+          await refreshMiniCart(true);
+        }
+      } catch (e) {}
+    });
+  });
+});
+</script>
+
+{% endblock %}

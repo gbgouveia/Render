@@ -1,0 +1,70 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}
+Produtos
+{% endblock %}
+
+{% block conteudos %}
+
+<div class="container mt-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h2>📦 Produtos</h2>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('admin.categorias') }}" class="btn btn-outline-secondary">Categorias</a>
+            <a href="{{ url_for('admin.marcas') }}" class="btn btn-outline-secondary">Marcas</a>
+            <a href="{{ url_for('admin.criar_produto') }}" class="btn btn-success">+ Novo Produto</a>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped shadow-sm align-middle">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Imagem</th>
+                    <th>Nome</th>
+                    <th>Categoria</th>
+                    <th>Marca</th>
+                    <th>Preço</th>
+                    <th>Estoque</th>
+                    <th style="width: 200px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in itens %}
+                <tr>
+                    <td>{{ item.id }}</td>
+                    <td>
+                        {% if item.imagem %}
+                            <img src="{{ url_for('static', filename='uploads/' + item.imagem) }}" style="width:50px; height:50px; object-fit:cover; border-radius:8px;">
+                        {% else %}
+                            <span class="text-muted">Sem imagem</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.nome }}</td>
+                    <td>{{ item.categoria.nome if item.categoria else '-' }}</td>
+                    <td>{{ item.marca.nome if item.marca else '-' }}</td>
+                    <td>R$ {{ "%.2f"|format(item.preco) }}</td>
+                    <td>{{ item.estoque }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.editar_produto', id=item.id) }}" class="btn btn-sm btn-warning">
+                           Editar
+                        </a>
+
+                        <form action="{{ url_for('admin.excluir_produto', id=item.id) }}" method="POST" style="display:inline-block;">
+                            <button type="submit" class="btn btn-sm btn-danger"
+                                    onclick="return confirm('Deseja realmente excluir este produto?')">
+                                Excluir
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+{% endblock %}

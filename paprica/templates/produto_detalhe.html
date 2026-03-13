@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block titulo %}
+{{ item.nome }}
+{% endblock %}
+
+{% block conteudos %}
+
+<div class="container py-5">
+
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb" class="mb-4">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('page_home') }}">Home</a>
+      </li>
+      <li class="breadcrumb-item">
+        <a href="{{ url_for('page_produto') }}">Produtos</a>
+      </li>
+      <li class="breadcrumb-item active" aria-current="page">
+        {{ item.nome }}
+      </li>
+    </ol>
+  </nav>
+
+  <div class="row g-5">
+
+    <!-- GALERIA -->
+    <div class="col-12 col-lg-6">
+      <div class="produto-detalhe-galeria">
+
+        {% set total_imagens = (item.imagens|length if item.imagens else 0) + (1 if item.imagem else 0) %}
+
+        {% if total_imagens > 0 %}
+          <div id="carouselDetalhe{{ item.id }}" class="carousel slide detalhe-carousel" data-bs-ride="false">
+
+            <div class="carousel-inner detalhe-carousel-inner">
+
+              {% if item.imagem %}
+                <div class="carousel-item active">
+                  <img src="{{ url_for('static', filename='uploads/' + item.imagem) }}"
+                       class="d-block w-100 detalhe-img-principal"
+                       alt="{{ item.nome }}">
+                </div>
+              {% endif %}
+
+              {% if item.imagens %}
+                {% for img in item.imagens %}
+                  {% if img.arquivo != item.imagem %}
+                    <div class="carousel-item {% if not item.imagem and loop.first %}active{% endif %}">
+                      <img src="{{ url_for('static', filename='uploads/' + img.arquivo) }}"
+                           class="d-block w-100 detalhe-img-principal"
+                           alt="{{ item.nome }}">
+                    </div>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+
+            </div>
+
+            {% if total_imagens > 1 %}
+              <button class="carousel-control-prev" type="button" data-bs-target="#carouselDetalhe{{ item.id }}" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon"></span>
+                <span class="visually-hidden">Anterior</span>
+              </button>
+
+              <button class="carousel-control-next" type="button" data-bs-target="#carouselDetalhe{{ item.id }}" data-bs-slide="next">
+                <span class="carousel-control-next-icon"></span>
+                <span class="visually-hidden">Próxima</span>
+              </button>
+            {% endif %}
+          </div>
+
+          {% if total_imagens > 1 %}
+            <div class="detalhe-thumbs mt-3">
+              {% set ns = namespace(index=0) %}
+
+              {% if item.imagem %}
+                <button type="button"
+                        class="thumb-btn active"
+                        data-bs-target="#carouselDetalhe{{ item.id }}"
+                        data-bs-slide-to="{{ ns.index }}">
+                  <img src="{{ url_for('static', filename='uploads/' + item.imagem) }}" alt="{{ item.nome }}">
+                </button>
+                {% set ns.index = ns.index + 1 %}
+              {% endif %}
+
+              {% if item.imagens %}
+                {% for img in item.imagens %}
+                  {% if img.arquivo != item.imagem %}
+                    <button type="button"
+                            class="thumb-btn {% if not item.imagem and loop.first %}active{% endif %}"
+                            data-bs-target="#carouselDetalhe{{ item.id }}"
+                            data-bs-slide-to="{{ ns.index }}">
+                      <img src="{{ url_for('static', filename='uploads/' + img.arquivo) }}" alt="{{ item.nome }}">
+                    </button>
+                    {% set ns.index = ns.index + 1 %}
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+            </div>
+          {% endif %}
+
+        {% else %}
+          <div class="detalhe-sem-imagem">
+            <img src="{{ url_for('static', filename='image/sem-imagem.png') }}"
+                 class="img-fluid"
+                 alt="Sem imagem">
+          </div>
+        {% endif %}
+
+      </div>
+    </div>
+
+    <!-- INFO -->
+    <div class="col-12 col-lg-6">
+      <div class="produto-detalhe-info">
+
+        <div class="mb-2 d-flex flex-wrap gap-2">
+          {% if item.categoria %}
+            <span class="badge bg-secondary">{{ item.categoria.nome }}</span>
+          {% endif %}
+          {% if item.marca %}
+            <span class="badge bg-light text-dark border">{{ item.marca.nome }}</span>
+          {% endif %}
+        </div>
+
+        <h1 class="produto-detalhe-titulo">{{ item.nome }}</h1>
+
+        {% if item.estoque > 0 %}
+          <div class="mb-3">
+            <span class="badge bg-success">Em estoque</span>
+          </div>
+        {% else %}
+          <div class="mb-3">
+            <span class="badge bg-danger">Sem estoque</span>
+          </div>
+        {% endif %}
+
+        <div class="produto-detalhe-preco-box mb-3">
+          <small class="text-muted d-block">Preço</small>
+          <div class="produto-detalhe-preco">
+            R$ {{ "%.2f"|format(item.preco) }}
+          </div>
+          <small class="text-muted">
+            ou 3x de R$ {{ "%.2f"|format(item.preco / 3) }} sem juros
+          </small>
+        </div>
+
+        <div class="produto-detalhe-meta mb-4">
+          {% if item.cod_barra %}
+            <div><strong>Código de barras:</strong> {{ item.cod_barra }}</div>
+          {% endif %}
+          <div><strong>Estoque:</strong> {{ item.estoque }}</div>
+          <div><strong>Peso:</strong> {{ item.peso }} kg</div>
+          <div><strong>Dimensões:</strong> {{ item.altura }} x {{ item.largura }} x {{ item.comprimento }} cm</div>
+        </div>
+
+        <div class="produto-detalhe-compra mb-4">
+          <label for="qtdProduto" class="form-label fw-semibold">Quantidade</label>
+
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <input
+              type="number"
+              id="qtdProduto"
+              class="form-control detalhe-qtd-input"
+              min="1"
+              value="1"
+              {% if item.estoque > 0 %}max="{{ item.estoque }}"{% endif %}
+            >
+
+            <button
+              type="button"
+              class="btn btn-success detalhe-btn-comprar js-add-cart-detalhe"
+              data-item-id="{{ item.id }}"
+              {% if item.estoque <= 0 %}disabled{% endif %}
+            >
+              <i class="bi bi-cart"></i> Adicionar ao Carrinho
+            </button>
+
+            <a href="{{ url_for('favoritar', item_id=item.id) }}" class="btn btn-outline-danger">
+              <i class="bi bi-heart"></i>
+            </a>
+          </div>
+        </div>
+
+        <div class="produto-detalhe-descricao">
+          <h5 class="mb-3">Descrição do Produto</h5>
+          <div class="produto-detalhe-texto">
+            {{ item.descricao }}
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RELACIONADOS -->
+  {% if relacionados %}
+    <div class="mt-5">
+      <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h3 class="letras mb-0">Produtos Relacionados</h3>
+      </div>
+
+      <div class="row g-4">
+        {% for rel in relacionados %}
+          <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+            <div class="card product-card h-100">
+
+              <a href="{{ url_for('favoritar', item_id=rel.id) }}" class="favorito">
+                <i class="bi bi-heart"></i>
+              </a>
+
+              <a href="{{ url_for('produto_detalhe', item_id=rel.id) }}" class="text-decoration-none">
+                <div class="img-container">
+                  {% if rel.imagem %}
+                    <img src="{{ url_for('static', filename='uploads/' + rel.imagem) }}"
+                         class="img-produto img-fluid"
+                         alt="{{ rel.nome }}">
+                  {% else %}
+                    <img src="{{ url_for('static', filename='image/sem-imagem.png') }}"
+                         class="img-produto img-fluid"
+                         alt="Sem imagem">
+                  {% endif %}
+                </div>
+              </a>
+
+              <div class="card-body d-flex flex-column">
+                <a href="{{ url_for('produto_detalhe', item_id=rel.id) }}" class="text-decoration-none text-dark">
+                  <h6 class="titulo-produto">{{ rel.nome }}</h6>
+                </a>
+
+                <div class="mb-2">
+                  {% if rel.categoria %}
+                    <span class="badge bg-secondary">{{ rel.categoria.nome }}</span>
+                  {% endif %}
+                  {% if rel.marca %}
+                    <span class="badge bg-light text-dark border">{{ rel.marca.nome }}</span>
+                  {% endif %}
+                </div>
+
+                <div class="mt-auto">
+                  <h4 class="preco mb-1">
+                    R$ {{ "%.2f"|format(rel.preco) }}
+                  </h4>
+
+                  <button
+                    type="button"
+                    class="btn btn-add w-100 js-add-cart"
+                    data-item-id="{{ rel.id }}"
+                    {% if rel.estoque <= 0 %}disabled{% endif %}
+                  >
+                    <i class="bi bi-cart"></i> Adicionar
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const detalheBtn = document.querySelector(".js-add-cart-detalhe");
+
+  if (detalheBtn) {
+    detalheBtn.addEventListener("click", async () => {
+      const itemId = detalheBtn.getAttribute("data-item-id");
+      const qtdInput = document.getElementById("qtdProduto");
+
+      let quantidade = parseInt(qtdInput.value || "1", 10);
+      if (isNaN(quantidade) || quantidade < 1) quantidade = 1;
+
+      try {
+        for (let i = 0; i < quantidade; i++) {
+          const res = await fetch(`/api/carrinho/adicionar/${itemId}`, {
+            method: "POST"
+          });
+
+          if (res.redirected) {
+            window.location.href = res.url;
+            return;
+          }
+
+          if (!res.ok) {
+            alert("Não consegui adicionar ao carrinho.");
+            return;
+          }
+        }
+
+        if (typeof refreshMiniCart === "function") {
+          await refreshMiniCart(true);
+        }
+      } catch (e) {
+        alert("Erro ao adicionar ao carrinho.");
+      }
+    });
+  }
+
+  document.querySelectorAll(".js-add-cart").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const itemId = btn.getAttribute("data-item-id");
+
+      try {
+        const res = await fetch(`/api/carrinho/adicionar/${itemId}`, {
+          method: "POST"
+        });
+
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+
+        if (!res.ok) {
+          alert("Não consegui adicionar ao carrinho.");
+          return;
+        }
+
+        if (typeof refreshMiniCart === "function") {
+          await refreshMiniCart(true);
+        }
+      } catch (e) {
+        alert("Erro ao adicionar ao carrinho.");
+      }
+    });
+  });
+
+  const carousel = document.getElementById("carouselDetalhe{{ item.id }}");
+  if (carousel) {
+    carousel.addEventListener("slid.bs.carousel", function (event) {
+      document.querySelectorAll(".thumb-btn").forEach(btn => btn.classList.remove("active"));
+      const ativo = document.querySelector(`.thumb-btn[data-bs-slide-to="${event.to}"]`);
+      if (ativo) ativo.classList.add("active");
+    });
+  }
+});
+</script>
+
+{% endblock %}

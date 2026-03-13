@@ -1,0 +1,105 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}
+Banners
+{% endblock %}
+
+{% block conteudos %}
+<div class="container mt-4">
+    <h2 class="mb-4">Banners</h2>
+
+    <div class="card p-4 shadow-sm mb-4">
+        <form method="POST" action="{{ url_for('admin.criar_banner') }}" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    {{ form.titulo.label(class="form-label") }}
+                    {{ form.titulo(class="form-control", placeholder="Título do banner") }}
+                </div>
+
+                <div class="col-md-3">
+                    {{ form.imagem.label(class="form-label") }}
+                    {{ form.imagem(class="form-control") }}
+                </div>
+
+                <div class="col-md-3">
+                    {{ form.link.label(class="form-label") }}
+                    {{ form.link(class="form-control", placeholder="Ex: /produtos?marca_id=1") }}
+                </div>
+
+                <div class="col-md-1">
+                    {{ form.ordem.label(class="form-label") }}
+                    {{ form.ordem(class="form-control") }}
+                </div>
+
+                <div class="col-md-1 d-flex align-items-end">
+                    {{ form.submit(class="btn btn-success w-100") }}
+                </div>
+            </div>
+
+            <div class="form-check mt-3">
+                {{ form.ativo(class="form-check-input") }}
+                {{ form.ativo.label(class="form-check-label") }}
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 shadow-sm">
+        {% if banners %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Imagem</th>
+                            <th>Título</th>
+                            <th>Link</th>
+                            <th>Ordem</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for banner in banners %}
+                        <tr>
+                            <td>
+                                <img
+                                    src="{{ url_for('static', filename='uploads/' + banner.imagem) }}"
+                                    alt="{{ banner.titulo }}"
+                                    style="width: 140px; height: 70px; object-fit: cover; border-radius: 8px;"
+                                >
+                            </td>
+                            <td>{{ banner.titulo }}</td>
+                            <td>{{ banner.link or '-' }}</td>
+                            <td>{{ banner.ordem }}</td>
+                            <td>
+                                {% if banner.ativo %}
+                                    <span class="badge bg-success">Ativo</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inativo</span>
+                                {% endif %}
+                            </td>
+                            <td class="d-flex gap-2">
+                                <form method="POST" action="{{ url_for('admin.toggle_banner', id=banner.id) }}">
+                                    <button class="btn btn-sm btn-warning" type="submit">
+                                        {% if banner.ativo %}Desativar{% else %}Ativar{% endif %}
+                                    </button>
+                                </form>
+
+                                <form method="POST" action="{{ url_for('admin.excluir_banner', id=banner.id) }}">
+                                    <button class="btn btn-sm btn-danger" type="submit">
+                                        Excluir
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted mb-0">Nenhum banner cadastrado.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

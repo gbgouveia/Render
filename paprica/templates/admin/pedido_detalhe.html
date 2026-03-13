@@ -1,0 +1,90 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}Pedido #{{ pedido.id }}{% endblock %}
+
+{% block conteudos %}
+<div class="container mt-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>📦 Pedido #{{ pedido.id }}</h2>
+    <a href="{{ url_for('admin.pedidos') }}" class="btn btn-outline-secondary btn-sm">Voltar</a>
+  </div>
+
+  <div class="card p-3 mb-3">
+    <div class="row">
+      <div class="col-md-6">
+        <p class="mb-1"><strong>Cliente:</strong> {{ pedido.usuario.usuario if pedido.usuario else '—' }}</p>
+        <p class="mb-1"><strong>Status:</strong> <span class="badge bg-primary">{{ pedido.status }}</span></p>
+        <p class="mb-1"><strong>Gateway:</strong> {{ pedido.gateway or '—' }}</p>
+        <p class="mb-0"><strong>Transação:</strong> {{ pedido.transacao_id or '—' }}</p>
+      </div>
+
+      <div class="col-md-6">
+        <p class="mb-1"><strong>Total Produtos:</strong> R$ {{ "%.2f"|format(pedido.total_produtos) }}</p>
+        <p class="mb-1"><strong>Frete:</strong> R$ {{ "%.2f"|format(pedido.frete_valor) }}</p>
+        <p class="mb-0"><strong>Total Final:</strong> R$ {{ "%.2f"|format(pedido.total_final) }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-3 mb-3">
+    <h5 class="mb-3">🔧 Atualizar pedido</h5>
+
+    <form method="POST" action="{{ url_for('admin.pedido_atualizar', pedido_id=pedido.id) }}">
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <label class="form-label">Status</label>
+          <select name="status" class="form-select" required>
+            {% set s = pedido.status %}
+            <option value="aguardando_pagamento" {% if s=='aguardando_pagamento' %}selected{% endif %}>aguardando_pagamento</option>
+            <option value="pago" {% if s=='pago' %}selected{% endif %}>pago</option>
+            <option value="separando" {% if s=='separando' %}selected{% endif %}>separando</option>
+            <option value="enviado" {% if s=='enviado' %}selected{% endif %}>enviado</option>
+            <option value="entregue" {% if s=='entregue' %}selected{% endif %}>entregue</option>
+            <option value="cancelado" {% if s=='cancelado' %}selected{% endif %}>cancelado</option>
+          </select>
+        </div>
+
+        <div class="col-md-6 mb-3">
+          <label class="form-label">Código de rastreamento</label>
+          <input name="codigo_rastreamento" class="form-control" value="{{ pedido.codigo_rastreamento or '' }}">
+        </div>
+      </div>
+
+      <button class="btn btn-success">Salvar alterações</button>
+    </form>
+  </div>
+
+  <div class="card p-3">
+    <h5 class="mb-3">🧾 Itens do pedido</h5>
+
+    {% if itens %}
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>Qtd</th>
+              <th>Preço Unit</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for i in itens %}
+              <tr>
+                <td>{{ i.nome_produto or (i.item.nome if i.item else '—') }}</td>
+                <td>{{ i.quantidade }}</td>
+                <td>R$ {{ "%.2f"|format(i.preco_unitario) }}</td>
+                <td>R$ {{ "%.2f"|format(i.preco_unitario * i.quantidade) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">Sem itens (ainda não foi gerado checkout).</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

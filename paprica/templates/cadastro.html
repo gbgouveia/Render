@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+  Cadastro
+{% endblock %}
+
+{% block conteudos %}
+<div class="cadastro-wrapper">
+  <div class="conteiner">
+    <img class="form-logo" src="{{ url_for('static', filename='image/Logo_Cadastro.png') }}" alt="Logo Cadastro">
+
+    <h1 class="h3 mb-3">
+      Por favor, crie a sua conta
+    </h1>
+
+    <form method="post" class="form-register">
+      {{ form.hidden_tag() }}
+
+      <div class="mb-3">
+        {{ form.usuario.label() }}
+        {{ form.usuario(class="form-control", placeholder="Informe o username") }}
+      </div>
+
+      <div class="mb-3">
+        {{ form.email.label() }}
+        {{ form.email(class="form-control", placeholder="Informe o seu e-mail") }}
+      </div>
+
+      <div class="mb-3">
+        {{ form.senha1.label() }}
+        {{ form.senha1(class="form-control", placeholder="Informe a senha") }}
+      </div>
+
+      <div class="mb-3">
+        {{ form.senha2.label() }}
+        {{ form.senha2(class="form-control", placeholder="Confirme a senha") }}
+      </div>
+
+      <div class="d-grid">
+        {{ form.submit(class="btn btn-lg btn-success") }}
+      </div>
+    </form>
+
+    <div class="text-center mt-3">
+      <small>
+        Já tem conta?
+        <a href="{{ url_for('page_login') }}">Entrar</a>
+      </small>
+    </div>
+  </div>
+</div>
+{% endblock %}

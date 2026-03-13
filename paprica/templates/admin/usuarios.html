@@ -1,0 +1,64 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}Usuários{% endblock %}
+
+{% block conteudos %}
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>👤 Usuários</h2>
+    <div class="text-muted">
+      Admins: {{ total_admins }}
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-striped shadow-sm">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Usuário</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Admin?</th>
+          <th style="width: 180px;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+          <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.usuario }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.role }}</td>
+            <td>
+              {% if u.is_admin %}
+                <span class="badge bg-success">SIM</span>
+              {% else %}
+                <span class="badge bg-secondary">NÃO</span>
+              {% endif %}
+            </td>
+
+            <td>
+              <form method="POST" action="{{ url_for('admin.toggle_admin', user_id=u.id) }}">
+                <button
+                  type="submit"
+                  class="btn btn-sm {% if u.is_admin %}btn-outline-danger{% else %}btn-outline-success{% endif %}"
+                  {% if current_user.id == u.id %}disabled{% endif %}
+                  title="{% if current_user.id == u.id %}Você não pode alterar você mesmo{% endif %}"
+                >
+                  {% if u.is_admin %}
+                    Remover admin
+                  {% else %}
+                    Tornar admin
+                  {% endif %}
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,150 @@
+{% extends 'base.html' %}
+
+{% block titulo %}Endereço{% endblock %}
+
+{% block conteudos %}
+
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+
+      <div class="card p-4 shadow-sm">
+
+        <h4 class="mb-4">Cadastrar / Editar Endereço</h4>
+
+        <form method="POST" novalidate>
+          {{ form.hidden_tag() }}
+
+          <div class="mb-3">
+            {{ form.cep.label(class="form-label") }}
+            {{ form.cep(class="form-control", id="cepInput", autocomplete="postal-code") }}
+            {% for err in form.cep.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.rua.label(class="form-label") }}
+            {{ form.rua(class="form-control", id="rua", autocomplete="address-line1") }}
+            {% for err in form.rua.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.numero.label(class="form-label") }}
+            {{ form.numero(class="form-control", autocomplete="address-line2") }}
+            {% for err in form.numero.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.complemento.label(class="form-label") }}
+            {{ form.complemento(class="form-control") }}
+            {% for err in form.complemento.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.bairro.label(class="form-label") }}
+            {{ form.bairro(class="form-control", id="bairro", autocomplete="address-level3") }}
+            {% for err in form.bairro.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.cidade.label(class="form-label") }}
+            {{ form.cidade(class="form-control", id="cidade", autocomplete="address-level2") }}
+            {% for err in form.cidade.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.estado.label(class="form-label") }}
+            {{ form.estado(class="form-control", id="estado", autocomplete="address-level1") }}
+            {% for err in form.estado.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="form-check mb-3">
+            {{ form.principal(class="form-check-input") }}
+            {{ form.principal.label(class="form-check-label") }}
+            {% for err in form.principal.errors %}
+              <div class="text-danger small mt-1">{{ err }}</div>
+            {% endfor %}
+          </div>
+
+          <div class="d-grid">
+            {{ form.submit(class="btn btn-success") }}
+          </div>
+
+          <div id="cepMsg" class="mt-3"></div>
+        </form>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const cepInput = document.getElementById("cepInput");
+  const msg = document.getElementById("cepMsg");
+
+  function setMsg(html){
+    msg.innerHTML = html || "";
+  }
+
+  function onlyNumbers(str){
+    return (str || "").replace(/\D/g, "");
+  }
+
+  async function buscarCep(){
+    const cep = onlyNumbers(cepInput.value);
+    cepInput.value = cep;
+
+    if(cep.length !== 8){
+      setMsg(`<div class="alert alert-warning py-2">Digite um CEP válido (8 números).</div>`);
+      return;
+    }
+
+    setMsg(`
+      <div class="text-center">
+        <div class="spinner-border text-success"></div>
+        <div class="mt-2">Buscando endereço...</div>
+      </div>
+    `);
+
+    try{
+      const res = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await res.json();
+
+      if(data.erro){
+        setMsg(`<div class="alert alert-danger py-2">CEP não encontrado.</div>`);
+        return;
+      }
+
+      // Preenche campos
+      document.getElementById("rua").value = data.logradouro || "";
+      document.getElementById("bairro").value = data.bairro || "";
+      document.getElementById("cidade").value = data.localidade || "";
+      document.getElementById("estado").value = data.uf || "";
+
+      setMsg(`<div class="alert alert-success py-2">Endereço encontrado ✅</div>`);
+
+    }catch(e){
+      setMsg(`<div class="alert alert-danger py-2">Erro ao consultar o CEP. Tente novamente.</div>`);
+    }
+  }
+
+  // dispara quando sair do campo
+  cepInput.addEventListener("blur", buscarCep);
+})();
+</script>
+
+{% endblock %}

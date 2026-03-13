@@ -1,0 +1,99 @@
+{% extends "admin/base_admin.html" %}
+
+{% block conteudos %}
+
+<div class="container mt-4">
+    <h2>Novo Produto</h2>
+
+    <form method="POST" enctype="multipart/form-data">
+        {{ form.hidden_tag() }}
+
+        {% if form.errors %}
+            <div class="alert alert-danger">
+                <strong>Corrija os erros abaixo:</strong>
+                <ul class="mb-0 mt-2">
+                    {% for campo, erros in form.errors.items() %}
+                        {% for erro in erros %}
+                            <li><strong>{{ campo }}</strong>: {{ erro }}</li>
+                        {% endfor %}
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+
+        <div class="mb-3">
+            {{ form.nome.label(class="form-label") }}
+            {{ form.nome(class="form-control") }}
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                {{ form.categoria_id.label(class="form-label") }}
+                {{ form.categoria_id(class="form-select") }}
+            </div>
+
+            <div class="col-md-6 mb-3">
+                {{ form.marca_id.label(class="form-label") }}
+                {{ form.marca_id(class="form-select") }}
+            </div>
+        </div>
+
+        <div class="mb-3">
+            {{ form.preco.label(class="form-label") }}
+            {{ form.preco(class="form-control") }}
+        </div>
+
+        <div class="mb-3">
+            {{ form.cod_barra.label(class="form-label") }}
+            {{ form.cod_barra(class="form-control") }}
+        </div>
+
+        <div class="mb-3">
+            {{ form.descricao.label(class="form-label") }}
+            {{ form.descricao(class="form-control", rows="4") }}
+        </div>
+
+        <div class="mb-3">
+            {{ form.estoque.label(class="form-label") }}
+            {{ form.estoque(class="form-control") }}
+        </div>
+
+        <div class="row">
+            <div class="col-md-3 mb-3">
+                {{ form.peso.label(class="form-label") }}
+                {{ form.peso(class="form-control") }}
+            </div>
+
+            <div class="col-md-3 mb-3">
+                {{ form.altura.label(class="form-label") }}
+                {{ form.altura(class="form-control") }}
+            </div>
+
+            <div class="col-md-3 mb-3">
+                {{ form.largura.label(class="form-label") }}
+                {{ form.largura(class="form-control") }}
+            </div>
+
+            <div class="col-md-3 mb-3">
+                {{ form.comprimento.label(class="form-label") }}
+                {{ form.comprimento(class="form-control") }}
+            </div>
+        </div>
+
+        <div class="mb-3">
+            {{ form.imagem.label(class="form-label") }}
+            {{ form.imagem(class="form-control") }}
+            <small class="text-muted">Imagem principal do produto.</small>
+        </div>
+
+        <div class="mb-3">
+            {{ form.imagens.label(class="form-label") }}
+            {{ form.imagens(class="form-control", multiple=True) }}
+            <small class="text-muted">Você pode selecionar várias imagens para a galeria.</small>
+        </div>
+
+        {{ form.submit(class="btn btn-success") }}
+    </form>
+</div>
+
+{% endblock %}

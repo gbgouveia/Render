@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+env
+instance/
+paprica/static/uploads/
+paprica/__pycache__/

@@ -1,0 +1,50 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}Pedidos{% endblock %}
+
+{% block conteudos %}
+<div class="container mt-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>🛒 Pedidos</h2>
+  </div>
+
+  {% if pedidos %}
+    <div class="table-responsive">
+      <table class="table table-striped shadow-sm">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Cliente</th>
+            <th>Status</th>
+            <th>Total</th>
+            <th>Data</th>
+            <th style="width: 140px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in pedidos %}
+            <tr>
+              <td>{{ p.id }}</td>
+              <td>{{ p.usuario.usuario if p.usuario else '—' }}</td>
+              <td><span class="badge bg-primary">{{ p.status }}</span></td>
+              <td>R$ {{ "%.2f"|format(p.total_final) }}</td>
+              <td>{{ p.data_criacao.strftime("%d/%m/%Y %H:%M") if p.data_criacao else "" }}</td>
+              <td>
+                <a href="{{ url_for('admin.pedido_detalhe', pedido_id=p.id) }}" class="btn btn-sm btn-outline-dark">
+                  Ver
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-warning">
+      Nenhum pedido ainda.
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

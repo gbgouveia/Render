@@ -1,0 +1,71 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}Marcas{% endblock %}
+
+{% block conteudos %}
+<div class="container mt-4">
+    <h2 class="mb-4">Marcas</h2>
+
+    <div class="card p-4 shadow-sm mb-4">
+        <form method="POST" action="{{ url_for('admin.criar_marca') }}" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+
+            <div class="row g-3">
+                <div class="col-md-5">
+                    {{ form.nome.label(class="form-label") }}
+                    {{ form.nome(class="form-control", placeholder="Nome da marca") }}
+                </div>
+
+                <div class="col-md-5">
+                    {{ form.logo.label(class="form-label") }}
+                    {{ form.logo(class="form-control") }}
+                </div>
+
+                <div class="col-md-2 d-flex align-items-end">
+                    {{ form.submit(class="btn btn-success w-100") }}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 shadow-sm">
+        {% if marcas %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Logo</th>
+                            <th>Nome</th>
+                            <th>Slug</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for marca in marcas %}
+                        <tr>
+                            <td>
+                                {% if marca.logo %}
+                                    <img src="{{ url_for('static', filename='uploads/' + marca.logo) }}"
+                                         style="width: 90px; height: 50px; object-fit: contain;">
+                                {% else %}
+                                    <span class="text-muted">Sem logo</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ marca.nome }}</td>
+                            <td>{{ marca.slug }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('admin.excluir_marca', id=marca.id) }}" style="display:inline-block;">
+                                    <button class="btn btn-sm btn-danger" type="submit">Excluir</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted mb-0">Nenhuma marca cadastrada.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

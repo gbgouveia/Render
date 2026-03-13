@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Login
+{% endblock %}
+
+{% block conteudos %}
+
+<div class="cadastro-wrapper">
+  <div class="conteiner">
+
+    <img class="form-logo" src="{{ url_for('static', filename='image/LOGO.png') }}" alt="Logo">
+
+    <h1 class="h3 mb-3">
+      Acesse sua Conta
+    </h1>
+
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+
+      <div class="mb-3">
+        {{ form.usuario.label() }}
+        {{ form.usuario(class="form-control", placeholder="Digite seu usuário", autocomplete="username") }}
+        {% for err in form.usuario.errors %}
+          <div class="text-danger small mt-1">{{ err }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="mb-3">
+        {{ form.senha.label() }}
+        {{ form.senha(class="form-control", placeholder="Digite sua senha", autocomplete="current-password") }}
+        {% for err in form.senha.errors %}
+          <div class="text-danger small mt-1">{{ err }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="d-grid">
+        {{ form.submit(class="btn btn-lg btn-success") }}
+      </div>
+    </form>
+    <div class="text-center mt-3">
+      <a href="{{ url_for('login_google') }}" class="btn-google">
+          <img src="/static/image/google.png" class="google-icon">
+          Entrar com Google
+      </a>
+    </div>
+
+    <div class="text-center mt-3">
+      <small>
+        Ainda não tem conta?
+        <a href="{{ url_for('page_cadastro') }}">Criar conta</a>
+      </small>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}

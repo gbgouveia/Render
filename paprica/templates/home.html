@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block titulo %}
+Home
+{% endblock %}
+
+{% block conteudos %}
+
+<div class="container py-4">
+
+<!-- ================= HERO BANNERS ================= -->
+{% if banners %}
+<div id="carouselHeroHome" class="carousel slide mb-5" data-bs-ride="carousel">
+  <div class="carousel-inner">
+    {% for banner in banners %}
+    <div class="carousel-item {% if loop.first %}active{% endif %}">
+      {% if banner.link %}
+        <a href="{{ banner.link }}">
+          <img src="{{ url_for('static', filename='uploads/' + banner.imagem) }}"
+               class="d-block w-100 hero-banner-dinamico"
+               alt="{{ banner.titulo }}">
+        </a>
+      {% else %}
+        <img src="{{ url_for('static', filename='uploads/' + banner.imagem) }}"
+             class="d-block w-100 hero-banner-dinamico"
+             alt="{{ banner.titulo }}">
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if banners|length > 1 %}
+  <button class="carousel-control-prev" type="button" data-bs-target="#carouselHeroHome" data-bs-slide="prev">
+    <span class="carousel-control-prev-icon"></span>
+  </button>
+  <button class="carousel-control-next" type="button" data-bs-target="#carouselHeroHome" data-bs-slide="next">
+    <span class="carousel-control-next-icon"></span>
+  </button>
+  {% endif %}
+</div>
+{% endif %}
+
+  <!-- ================= PRODUTOS ================= -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="titulo-secao-home">PRODUTOS</h3>
+    <a href="{{ url_for('page_produto') }}" class="home-link-ver-tudo">ver tudo</a>
+  </div>
+
+  <div id="carouselProdutosHome" class="carousel slide mb-5" data-bs-ride="false">
+    <div class="carousel-inner">
+      {% for grupo in produtos|batch(5, None) %}
+      <div class="carousel-item {% if loop.first %}active{% endif %}">
+        <div class="row g-4">
+          {% for produto in grupo %}
+            {% if produto %}
+            <div class="col-md-2-4 col-lg">
+              <div class="card product-card h-100">
+
+                <a href="{{ url_for('favoritar', item_id=produto.id) }}" class="favorito">
+                  <i class="bi bi-heart"></i>
+                </a>
+
+                <a href="{{ url_for('produto_detalhe', item_id=produto.id) }}" class="text-decoration-none">
+                  <div class="img-container">
+                    {% if produto.imagem %}
+                      <img src="{{ url_for('static', filename='uploads/' + produto.imagem) }}"
+                           class="img-produto img-fluid"
+                           alt="{{ produto.nome }}">
+                    {% else %}
+                      <img src="{{ url_for('static', filename='image/sem-imagem.png') }}"
+                           class="img-produto img-fluid"
+                           alt="Sem imagem">
+                    {% endif %}
+                  </div>
+                </a>
+
+                <div class="card-body d-flex flex-column">
+                  <a href="{{ url_for('produto_detalhe', item_id=produto.id) }}" class="text-decoration-none text-dark">
+                    <h6 class="titulo-produto">{{ produto.nome }}</h6>
+                  </a>
+
+                  <div class="mb-2">
+                    {% if produto.categoria %}
+                      <span class="badge bg-secondary">{{ produto.categoria.nome }}</span>
+                    {% endif %}
+                    {% if produto.marca %}
+                      <span class="badge bg-light text-dark border">{{ produto.marca.nome }}</span>
+                    {% endif %}
+                  </div>
+
+                  <div class="mt-auto">
+                    <small class="text-muted d-block">A partir de</small>
+                    <h4 class="preco mb-1">R$ {{ "%.2f"|format(produto.preco) }}</h4>
+
+                    <button
+                      type="button"
+                      class="btn btn-add w-100 js-add-cart"
+                      data-item-id="{{ produto.id }}"
+                      {% if produto.estoque <= 0 %}disabled{% endif %}
+                    >
+                      <i class="bi bi-cart"></i> Adicionar ao carrinho
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <button class="carousel-control-prev home-carousel-arrow" type="button" data-bs-target="#carouselProdutosHome" data-bs-slide="prev">
+      <span class="carousel-control-prev-icon"></span>
+    </button>
+    <button class="carousel-control-next home-carousel-arrow" type="button" data-bs-target="#carouselProdutosHome" data-bs-slide="next">
+      <span class="carousel-control-next-icon"></span>
+    </button>
+  </div>
+
+<!-- ================= CATEGORIAS ================= -->
+<div class="text-center mt-5 mb-4">
+  <h3 class="titulo-secao-home">PARA TODAS AS NECESSIDADES</h3>
+</div>
+
+<div class="row g-3 mb-5">
+  {% for categoria in categorias %}
+  <div class="col-6 col-md-4 col-lg">
+    <a href="{{ url_for('page_produto', categoria_id=categoria.id) }}" class="text-decoration-none">
+      <div class="categoria-home-card">
+        {% if categoria.imagem %}
+          <img src="{{ url_for('static', filename='uploads/' + categoria.imagem) }}"
+               class="categoria-home-img"
+               alt="{{ categoria.nome }}">
+        {% else %}
+          <img src="{{ url_for('static', filename='image/categoria_padrao.jpg') }}"
+               class="categoria-home-img"
+               alt="{{ categoria.nome }}">
+        {% endif %}
+
+        <div class="categoria-home-overlay">
+          <span>{{ categoria.nome }}</span>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+  <!-- ================= MARCAS ================= -->
+  <div class="text-center mt-5 mb-4">
+    <h3 class="titulo-secao-home">NAVEGUE POR MARCA</h3>
+  </div>
+
+  <div id="carouselMarcasHome" class="carousel slide mb-5" data-bs-ride="false">
+    <div class="carousel-inner">
+      {% for grupo in marcas|batch(6, None) %}
+      <div class="carousel-item {% if loop.first %}active{% endif %}">
+        <div class="row justify-content-center g-3">
+          {% for marca in grupo %}
+            {% if marca %}
+            <div class="col-6 col-md-4 col-lg-2">
+              <a href="{{ url_for('page_produto', marca_id=marca.id) }}" class="text-decoration-none">
+                <div class="marca-home-box">
+                  {% if marca.logo %}
+                    <img src="{{ url_for('static', filename='uploads/' + marca.logo) }}" class="marca-home-logo" alt="{{ marca.nome }}">
+                  {% else %}
+                    <span class="marca-home-text">{{ marca.nome }}</span>
+                  {% endif %}
+                </div>
+              </a>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <button class="carousel-control-prev home-carousel-arrow home-carousel-arrow-small" type="button" data-bs-target="#carouselMarcasHome" data-bs-slide="prev">
+      <span class="carousel-control-prev-icon"></span>
+    </button>
+    <button class="carousel-control-next home-carousel-arrow home-carousel-arrow-small" type="button" data-bs-target="#carouselMarcasHome" data-bs-slide="next">
+      <span class="carousel-control-next-icon"></span>
+    </button>
+  </div>
+
+  <!-- ================= ESSENTIAL ================= -->
+  {% if produtos_essential %}
+  <div class="d-flex justify-content-between align-items-center mt-5 mb-3">
+    <h3 class="titulo-secao-home">ESSENTIAL NUTRITION</h3>
+    <a href="{{ url_for('page_produto') }}?marca_id={% for marca in marcas %}{% if marca.nome == 'Essential Nutrition' %}{{ marca.id }}{% endif %}{% endfor %}" class="home-link-ver-tudo">ver tudo</a>
+  </div>
+
+  <div class="row g-4 mb-5">
+    {% for produto in produtos_essential %}
+    <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+      <div class="card product-card h-100">
+        <a href="{{ url_for('favoritar', item_id=produto.id) }}" class="favorito">
+          <i class="bi bi-heart"></i>
+        </a>
+
+        <a href="{{ url_for('produto_detalhe', item_id=produto.id) }}" class="text-decoration-none">
+          <div class="img-container">
+            {% if produto.imagem %}
+              <img src="{{ url_for('static', filename='uploads/' + produto.imagem) }}"
+                   class="img-produto img-fluid"
+                   alt="{{ produto.nome }}">
+            {% else %}
+              <img src="{{ url_for('static', filename='image/sem-imagem.png') }}"
+                   class="img-produto img-fluid"
+                   alt="Sem imagem">
+            {% endif %}
+          </div>
+        </a>
+
+        <div class="card-body d-flex flex-column">
+          <a href="{{ url_for('produto_detalhe', item_id=produto.id) }}" class="text-decoration-none text-dark">
+            <h6 class="titulo-produto">{{ produto.nome }}</h6>
+          </a>
+
+          <h4 class="preco mb-1">R$ {{ "%.2f"|format(produto.preco) }}</h4>
+
+          <button type="button"
+                  class="btn btn-add w-100 js-add-cart mt-auto"
+                  data-item-id="{{ produto.id }}"
+                  {% if produto.estoque <= 0 %}disabled{% endif %}>
+            <i class="bi bi-cart"></i> Adicionar ao carrinho
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ================= VITAFOR ================= -->
+  {% if produtos_vitafor %}
+  <div class="d-flex justify-content-between align-items-center mt-5 mb-3">
+    <h3 class="titulo-secao-home">VITAFOR</h3>
+    <a href="{{ url_for('page_produto') }}?marca_id={% for marca in marcas %}{% if marca.nome == 'Vitafor' %}{{ marca.id }}{% endif %}{% endfor %}" class="home-link-ver-tudo">ver tudo</a>
+  </div>
+
+  <div class="row g-4 mb-5">
+    {% for produto in produtos_vitafor %}
+    <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+      <div class="card product-card h-100">
+        <a href="{{ url_for('favoritar', item_id=produto.id) }}" class="favorito">
+          <i class="bi bi-heart"></i>
+        </a>
+
+        <a href="{{ url_for('produto_detalhe', item_id=produto.id) }}" class="text-decoration-none">
+          <div class="img-container">
+            {% if produto.imagem %}
+              <img src="{{ url_for('static', filename='uploads/' + produto.imagem) }}"
+                   class="img-produto img-fluid"
+                   alt="{{ produto.nome }}">
+            {% else %}
+              <img src="{{ url_for('static', filename='image/sem-imagem.png') }}"
+                   class="img-produto img-fluid"
+                   alt="Sem imagem">
+            {% endif %}
+          </div>
+        </a>
+
+        <div class="card-body d-flex flex-column">
+          <a href="{{ url_for('produto_detalhe', item_id=produto.id) }}" class="text-decoration-none text-dark">
+            <h6 class="titulo-produto">{{ produto.nome }}</h6>
+          </a>
+
+          <h4 class="preco mb-1">R$ {{ "%.2f"|format(produto.preco) }}</h4>
+
+          <button type="button"
+                  class="btn btn-add w-100 js-add-cart mt-auto"
+                  data-item-id="{{ produto.id }}"
+                  {% if produto.estoque <= 0 %}disabled{% endif %}>
+            <i class="bi bi-cart"></i> Adicionar ao carrinho
+          </button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".js-add-cart").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const itemId = btn.getAttribute("data-item-id");
+
+      try {
+        const res = await fetch(`/api/carrinho/adicionar/${itemId}`, {
+          method: "POST"
+        });
+
+        if (res.redirected) {
+          window.location.href = res.url;
+          return;
+        }
+
+        if (!res.ok) {
+          alert("Não consegui adicionar ao carrinho.");
+          return;
+        }
+
+        if (typeof refreshMiniCart === "function") {
+          await refreshMiniCart(true);
+        }
+      } catch (e) {
+        alert("Erro ao adicionar ao carrinho.");
+      }
+    });
+  });
+});
+</script>
+
+{% endblock %}

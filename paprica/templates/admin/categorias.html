@@ -1,0 +1,71 @@
+{% extends "admin/base_admin.html" %}
+
+{% block titulo %}Categorias{% endblock %}
+
+{% block conteudos %}
+<div class="container mt-4">
+    <h2 class="mb-4">Categorias</h2>
+
+    <div class="card p-4 shadow-sm mb-4">
+        <form method="POST" action="{{ url_for('admin.criar_categoria') }}" enctype="multipart/form-data">
+            {{ form.hidden_tag() }}
+
+            <div class="row g-3">
+                <div class="col-md-5">
+                    {{ form.nome.label(class="form-label") }}
+                    {{ form.nome(class="form-control", placeholder="Nome da categoria") }}
+                </div>
+
+                <div class="col-md-5">
+                    {{ form.imagem.label(class="form-label") }}
+                    {{ form.imagem(class="form-control") }}
+                </div>
+
+                <div class="col-md-2 d-flex align-items-end">
+                    {{ form.submit(class="btn btn-success w-100") }}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card p-4 shadow-sm">
+        {% if categorias %}
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Imagem</th>
+                            <th>Nome</th>
+                            <th>Slug</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for categoria in categorias %}
+                        <tr>
+                            <td>
+                                {% if categoria.imagem %}
+                                    <img src="{{ url_for('static', filename='uploads/' + categoria.imagem) }}"
+                                         style="width: 90px; height: 60px; object-fit: cover; border-radius: 8px;">
+                                {% else %}
+                                    <span class="text-muted">Sem imagem</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ categoria.nome }}</td>
+                            <td>{{ categoria.slug }}</td>
+                            <td>
+                                <form method="POST" action="{{ url_for('admin.excluir_categoria', id=categoria.id) }}" style="display:inline-block;">
+                                    <button class="btn btn-sm btn-danger" type="submit">Excluir</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p class="text-muted mb-0">Nenhuma categoria cadastrada.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
