@@ -5,12 +5,19 @@ from flask_login import LoginManager
 from dotenv import load_dotenv
 from authlib.integrations.flask_client import OAuth
 
-    
 load_dotenv()
 
 app = Flask(__name__)
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ["DATABASE_URL"]
-app.config["SECRET_KEY"] = '8697d8a1ec77e8c9b434ae5a'
+
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    raise RuntimeError("DATABASE_URL não foi definida.")
+
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "chave-dev-apenas-local")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
