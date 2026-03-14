@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 database_url = os.environ.get("DATABASE_URL")
 if not database_url:
-    raise RuntimeError("DATABASE_URL não foi definida.")
+    raise RuntimeError("DATABASE_URL não foi definida no Render.")
 
 if database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -38,9 +38,7 @@ oauth.register(
     client_id=os.environ.get("GOOGLE_CLIENT_ID"),
     client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={
-        "scope": "openid email profile"
-    }
+    client_kwargs={"scope": "openid email profile"}
 )
 
 from paprica.models import User
