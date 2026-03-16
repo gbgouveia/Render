@@ -1,4 +1,5 @@
 import os
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 import stripe
@@ -6,14 +7,11 @@ from flask import (
     render_template, redirect, url_for, flash, request, jsonify, abort, session
 )
 from flask_login import login_user, logout_user, login_required, current_user
-
-from paprica import app, db, oauth
-from paprica.models import Item, User, ItemCarrinho, Pedido, ItemPedido, Favorito, Endereco, Categoria, Marca, Banner
-from paprica.forms import CadastroForm, LoginForm, EnderecoForm
 from authlib.integrations.base_client.errors import OAuthError
-import uuid
 
-
+from paprica import app, oauth, get_db_connection
+from paprica.models import User
+from paprica.forms import CadastroForm, LoginForm, EnderecoForm
 
 
 # =========================================================
@@ -24,7 +22,7 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 
 # =========================================================
-# HELPERS
+# HELPERS GERAIS
 # =========================================================
 def _dec(v) -> Decimal:
     return Decimal(str(v or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -34,14 +32,343 @@ def _to_cents(v) -> int:
     return int(_dec(v) * 100)
 
 
+def _fetch_one(query, params=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(query, params or ())
+        return cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _fetch_all(query, params=None):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(query, params or ())
+        return cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _execute(query, params=None, commit=True, returning=False):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(query, params or ())
+        result = cur.fetchone() if returning else None
+        if commit:
+            conn.commit()
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _slugify_username(value: str) -> str:
+    base = "".join(
+        ch for ch in value.lower().replace(" ", "_")
+        if ch.isalnum() or ch == "_"
+    )
+    return base or "usuario"
+
+
+# =========================================================
+# HELPERS PRODUTOS / CATEGORIAS / MARCAS / BANNERS
+# =========================================================
+def _get_banners_ativos():
+    return _fetch_all(
+        """
+        SELECT id, titulo, imagem, link, ativo, ordem, data_criacao
+        FROM banners
+        WHERE ativo = TRUE
+        ORDER BY ordem ASC, id DESC
+        """
+    )
+
+
+def _get_produtos_recentes(limit=10):
+    return _fetch_all(
+        """
+        SELECT *
+        FROM itens
+        WHERE ativo = TRUE
+        ORDER BY data_criacao DESC
+        LIMIT %s
+        """,
+        (limit,)
+    )
+
+
+def _get_categorias(limit=None):
+    if limit:
+        return _fetch_all(
+            """
+            SELECT *
+            FROM categorias
+            ORDER BY nome ASC
+            LIMIT %s
+            """,
+            (limit,)
+        )
+
+    return _fetch_all(
+        """
+        SELECT *
+        FROM categorias
+        ORDER BY nome ASC
+        """
+    )
+
+
+def _get_marcas():
+    return _fetch_all(
+        """
+        SELECT *
+        FROM marcas
+        ORDER BY nome ASC
+        """
+    )
+
+
+def _get_produtos_por_nome_marca(nome_marca, limit=8):
+    return _fetch_all(
+        """
+        SELECT i.*
+        FROM itens i
+        INNER JOIN marcas m ON m.id = i.marca_id
+        WHERE i.ativo = TRUE
+          AND m.nome = %s
+        ORDER BY i.data_criacao DESC
+        LIMIT %s
+        """,
+        (nome_marca, limit)
+    )
+
+
+def _get_produto_por_id(item_id, apenas_ativo=False):
+    if apenas_ativo:
+        return _fetch_one(
+            """
+            SELECT *
+            FROM itens
+            WHERE id = %s AND ativo = TRUE
+            """,
+            (item_id,)
+        )
+
+    return _fetch_one(
+        """
+        SELECT *
+        FROM itens
+        WHERE id = %s
+        """,
+        (item_id,)
+    )
+
+
+def _buscar_produtos(termo="", preco_min="", preco_max="", em_estoque="", ordenar="recentes", categoria_id="", marca_id=""):
+    where = ["i.ativo = TRUE"]
+    params = []
+
+    if termo:
+        where.append("(i.nome ILIKE %s OR i.descricao ILIKE %s OR i.cod_barra ILIKE %s)")
+        like = f"%{termo}%"
+        params.extend([like, like, like])
+
+    if preco_min:
+        try:
+            where.append("i.preco >= %s")
+            params.append(float(preco_min))
+        except ValueError:
+            pass
+
+    if preco_max:
+        try:
+            where.append("i.preco <= %s")
+            params.append(float(preco_max))
+        except ValueError:
+            pass
+
+    if em_estoque == "1":
+        where.append("i.estoque > 0")
+
+    if categoria_id:
+        try:
+            where.append("i.categoria_id = %s")
+            params.append(int(categoria_id))
+        except ValueError:
+            pass
+
+    if marca_id:
+        try:
+            where.append("i.marca_id = %s")
+            params.append(int(marca_id))
+        except ValueError:
+            pass
+
+    order_map = {
+        "menor_preco": "i.preco ASC",
+        "maior_preco": "i.preco DESC",
+        "nome_az": "i.nome ASC",
+        "recentes": "i.data_criacao DESC"
+    }
+    order_sql = order_map.get(ordenar, "i.data_criacao DESC")
+
+    query = f"""
+        SELECT i.*
+        FROM itens i
+        WHERE {' AND '.join(where)}
+        ORDER BY {order_sql}
+    """
+
+    return _fetch_all(query, params)
+
+
+def _get_relacionados(item, limit=8):
+    if not item:
+        return []
+
+    where = ["ativo = TRUE", "id <> %s"]
+    params = [item["id"]]
+
+    if item.get("categoria_id"):
+        where.append("categoria_id = %s")
+        params.append(item["categoria_id"])
+    elif item.get("marca_id"):
+        where.append("marca_id = %s")
+        params.append(item["marca_id"])
+
+    query = f"""
+        SELECT *
+        FROM itens
+        WHERE {' AND '.join(where)}
+        ORDER BY data_criacao DESC
+        LIMIT %s
+    """
+    params.append(limit)
+    return _fetch_all(query, params)
+
+
+# =========================================================
+# HELPERS ENDEREÇOS
+# =========================================================
+def _get_endereco_por_id(endereco_id):
+    return _fetch_one(
+        """
+        SELECT *
+        FROM enderecos
+        WHERE id = %s
+        """,
+        (endereco_id,)
+    )
+
+
+def _get_endereco_principal(usuario_id):
+    return _fetch_one(
+        """
+        SELECT *
+        FROM enderecos
+        WHERE usuario_id = %s AND principal = TRUE
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (usuario_id,)
+    )
+
+
+def _get_enderecos_usuario(usuario_id):
+    return _fetch_all(
+        """
+        SELECT *
+        FROM enderecos
+        WHERE usuario_id = %s
+        ORDER BY principal DESC, id DESC
+        """,
+        (usuario_id,)
+    )
+
+
+# =========================================================
+# HELPERS CARRINHO
+# =========================================================
 def _carrinho_itens_usuario():
-    return ItemCarrinho.query.filter_by(usuario_id=current_user.id).all()
+    rows = _fetch_all(
+        """
+        SELECT
+            ic.id,
+            ic.usuario_id,
+            ic.item_id,
+            ic.quantidade,
+            i.nome,
+            i.descricao,
+            i.preco,
+            i.estoque,
+            i.ativo,
+            i.imagem,
+            i.cod_barra
+        FROM itens_carrinho ic
+        INNER JOIN itens i ON i.id = ic.item_id
+        WHERE ic.usuario_id = %s
+        ORDER BY ic.id DESC
+        """,
+        (current_user.id,)
+    )
+
+    itens = []
+    for r in rows:
+        itens.append({
+            "id": r["id"],
+            "usuario_id": r["usuario_id"],
+            "item_id": r["item_id"],
+            "quantidade": r["quantidade"],
+            "item": {
+                "id": r["item_id"],
+                "nome": r["nome"],
+                "descricao": r["descricao"],
+                "preco": r["preco"],
+                "estoque": r["estoque"],
+                "ativo": r["ativo"],
+                "imagem": r["imagem"],
+                "cod_barra": r["cod_barra"],
+            }
+        })
+    return itens
+
+
+def _get_carrinho_item(cart_id, usuario_id):
+    row = _fetch_one(
+        """
+        SELECT *
+        FROM itens_carrinho
+        WHERE id = %s AND usuario_id = %s
+        """,
+        (cart_id, usuario_id)
+    )
+    return row
+
+
+def _get_carrinho_item_por_produto(usuario_id, item_id):
+    return _fetch_one(
+        """
+        SELECT *
+        FROM itens_carrinho
+        WHERE usuario_id = %s AND item_id = %s
+        """,
+        (usuario_id, item_id)
+    )
 
 
 def _carrinho_total_reais(itens_carrinho) -> Decimal:
     total = Decimal("0.00")
     for c in itens_carrinho:
-        total += _dec(c.item.preco) * int(c.quantidade)
+        total += _dec(c["item"]["preco"]) * int(c["quantidade"])
     return total
 
 
@@ -53,18 +380,18 @@ def _carrinho_resumo_reais():
     lista = []
 
     for c in itens:
-        preco = _dec(c.item.preco)
-        quantidade = int(c.quantidade)
+        preco = _dec(c["item"]["preco"])
+        quantidade = int(c["quantidade"])
         subtotal = preco * quantidade
 
         total += subtotal
         qtd += quantidade
 
         lista.append({
-            "cart_id": c.id,
-            "item_id": c.item.id,
-            "nome": c.item.nome,
-            "imagem": c.item.imagem,
+            "cart_id": c["id"],
+            "item_id": c["item"]["id"],
+            "nome": c["item"]["nome"],
+            "imagem": c["item"]["imagem"],
             "preco": float(preco),
             "quantidade": quantidade,
             "subtotal": float(subtotal),
@@ -73,6 +400,93 @@ def _carrinho_resumo_reais():
     return {"qtd": qtd, "total": float(total), "itens": lista}
 
 
+def _limpar_carrinho_usuario(usuario_id):
+    _execute(
+        """
+        DELETE FROM itens_carrinho
+        WHERE usuario_id = %s
+        """,
+        (usuario_id,)
+    )
+
+
+# =========================================================
+# HELPERS PEDIDOS / FAVORITOS
+# =========================================================
+def _get_pedidos_usuario(usuario_id):
+    return _fetch_all(
+        """
+        SELECT *
+        FROM pedidos
+        WHERE usuario_id = %s
+        ORDER BY data_criacao DESC
+        """,
+        (usuario_id,)
+    )
+
+
+def _get_pedido_por_id(pedido_id):
+    return _fetch_one(
+        """
+        SELECT *
+        FROM pedidos
+        WHERE id = %s
+        """,
+        (pedido_id,)
+    )
+
+
+def _get_itens_comprados_usuario(usuario_id):
+    return _fetch_all(
+        """
+        SELECT
+            ip.*,
+            p.data_criacao AS pedido_data_criacao,
+            p.status AS pedido_status
+        FROM itens_pedido ip
+        INNER JOIN pedidos p ON p.id = ip.pedido_id
+        WHERE p.usuario_id = %s
+        ORDER BY ip.id DESC
+        """,
+        (usuario_id,)
+    )
+
+
+def _get_favoritos_usuario(usuario_id):
+    return _fetch_all(
+        """
+        SELECT
+            f.id,
+            f.usuario_id,
+            f.item_id,
+            i.nome,
+            i.preco,
+            i.imagem,
+            i.ativo,
+            i.descricao
+        FROM favoritos f
+        INNER JOIN itens i ON i.id = f.item_id
+        WHERE f.usuario_id = %s
+        ORDER BY f.id DESC
+        """,
+        (usuario_id,)
+    )
+
+
+def _favorito_existe(usuario_id, item_id):
+    return _fetch_one(
+        """
+        SELECT id
+        FROM favoritos
+        WHERE usuario_id = %s AND item_id = %s
+        """,
+        (usuario_id, item_id)
+    )
+
+
+# =========================================================
+# FRETE SESSION
+# =========================================================
 def _frete_session_get():
     return session.get("frete_escolhido")
 
@@ -93,14 +507,13 @@ def carrinho_global():
     if not current_user.is_authenticated:
         return dict(carrinho_itens=[], carrinho_total=Decimal("0.00"), carrinho_quantidade=0)
 
-    itens = ItemCarrinho.query.filter_by(usuario_id=current_user.id).all()
-
+    itens = _carrinho_itens_usuario()
     total = Decimal("0.00")
     qtd = 0
 
     for c in itens:
-        total += _dec(c.item.preco) * int(c.quantidade)
-        qtd += int(c.quantidade)
+        total += _dec(c["item"]["preco"]) * int(c["quantidade"])
+        qtd += int(c["quantidade"])
 
     return dict(
         carrinho_itens=itens,
@@ -114,28 +527,13 @@ def carrinho_global():
 # =========================================================
 @app.route("/")
 def page_home():
-    banners = Banner.query.filter_by(ativo=True).order_by(Banner.ordem.asc(), Banner.id.desc()).all()
+    banners = _get_banners_ativos()
+    produtos = _get_produtos_recentes(10)
+    categorias = _get_categorias(10)
+    marcas = _get_marcas()
 
-    produtos = Item.query.filter_by(ativo=True).order_by(Item.data_criacao.desc()).limit(10).all()
-
-    categorias = Categoria.query.order_by(Categoria.nome.asc()).limit(10).all()
-    marcas = Marca.query.order_by(Marca.nome.asc()).all()
-
-    produtos_essential = (
-        Item.query.join(Marca)
-        .filter(Item.ativo == True, Marca.nome == "Essential Nutrition")
-        .order_by(Item.data_criacao.desc())
-        .limit(8)
-        .all()
-    )
-
-    produtos_vitafor = (
-        Item.query.join(Marca)
-        .filter(Item.ativo == True, Marca.nome == "Vitafor")
-        .order_by(Item.data_criacao.desc())
-        .limit(8)
-        .all()
-    )
+    produtos_essential = _get_produtos_por_nome_marca("Essential Nutrition", 8)
+    produtos_vitafor = _get_produtos_por_nome_marca("Vitafor", 8)
 
     return render_template(
         "home.html",
@@ -158,56 +556,18 @@ def page_produto():
     categoria_id = (request.args.get("categoria_id") or "").strip()
     marca_id = (request.args.get("marca_id") or "").strip()
 
-    query = Item.query.filter_by(ativo=True)
+    itens = _buscar_produtos(
+        termo=termo,
+        preco_min=preco_min,
+        preco_max=preco_max,
+        em_estoque=em_estoque,
+        ordenar=ordenar,
+        categoria_id=categoria_id,
+        marca_id=marca_id
+    )
 
-    if termo:
-        query = query.filter(
-            db.or_(
-                Item.nome.ilike(f"%{termo}%"),
-                Item.descricao.ilike(f"%{termo}%"),
-                Item.cod_barra.ilike(f"%{termo}%")
-            )
-        )
-
-    if preco_min:
-        try:
-            query = query.filter(Item.preco >= float(preco_min))
-        except ValueError:
-            pass
-
-    if preco_max:
-        try:
-            query = query.filter(Item.preco <= float(preco_max))
-        except ValueError:
-            pass
-
-    if em_estoque == "1":
-        query = query.filter(Item.estoque > 0)
-
-    if categoria_id:
-        try:
-            query = query.filter(Item.categoria_id == int(categoria_id))
-        except ValueError:
-            pass
-
-    if marca_id:
-        try:
-            query = query.filter(Item.marca_id == int(marca_id))
-        except ValueError:
-            pass
-
-    if ordenar == "menor_preco":
-        query = query.order_by(Item.preco.asc())
-    elif ordenar == "maior_preco":
-        query = query.order_by(Item.preco.desc())
-    elif ordenar == "nome_az":
-        query = query.order_by(Item.nome.asc())
-    else:
-        query = query.order_by(Item.data_criacao.desc())
-
-    itens = query.all()
-    categorias = Categoria.query.order_by(Categoria.nome.asc()).all()
-    marcas = Marca.query.order_by(Marca.nome.asc()).all()
+    categorias = _get_categorias()
+    marcas = _get_marcas()
 
     return render_template(
         "produtos.html",
@@ -224,6 +584,8 @@ def page_produto():
             "marca_id": marca_id
         }
     )
+
+
 # =========================================================
 # LOGIN / LOGOUT / CADASTRO
 # =========================================================
@@ -232,7 +594,7 @@ def page_login():
     form = LoginForm()
 
     if form.validate_on_submit():
-        usuario = User.query.filter_by(usuario=form.usuario.data).first()
+        usuario = User.get_by_usuario(form.usuario.data)
 
         if usuario and usuario.check_senha(form.senha.data):
             login_user(usuario)
@@ -261,11 +623,21 @@ def page_cadastro():
     form = CadastroForm()
 
     if form.validate_on_submit():
-        usuario = User(usuario=form.usuario.data, email=form.email.data)
-        usuario.set_senha(form.senha1.data)
+        if User.get_by_usuario(form.usuario.data):
+            flash("Esse nome de usuário já está em uso.", "danger")
+            return render_template("cadastro.html", form=form)
 
-        db.session.add(usuario)
-        db.session.commit()
+        if User.get_by_email(form.email.data):
+            flash("Esse e-mail já está cadastrado.", "danger")
+            return render_template("cadastro.html", form=form)
+
+        User.create(
+            usuario=form.usuario.data,
+            email=form.email.data,
+            senha=form.senha1.data,
+            role="cliente",
+            is_admin=False
+        )
 
         flash("Cadastro realizado com sucesso!", "success")
         return redirect(url_for("page_login"))
@@ -284,19 +656,16 @@ def page_cadastro():
 @app.route("/perfil")
 @login_required
 def page_perfil():
-    pedidos = Pedido.query.filter_by(
-        usuario_id=current_user.id
-    ).order_by(Pedido.data_criacao.desc()).all()
+    pedidos = _get_pedidos_usuario(current_user.id)
+    itens_comprados = _get_itens_comprados_usuario(current_user.id)
+    enderecos = _get_enderecos_usuario(current_user.id)
 
-    itens_comprados = (
-        ItemPedido.query
-        .join(Pedido, ItemPedido.pedido_id == Pedido.id)
-        .filter(Pedido.usuario_id == current_user.id)
-        .order_by(ItemPedido.id.desc())
-        .all()
+    return render_template(
+        "perfil.html",
+        pedidos=pedidos,
+        itens=itens_comprados,
+        enderecos=enderecos
     )
-
-    return render_template("perfil.html", pedidos=pedidos, itens=itens_comprados)
 
 
 # =========================================================
@@ -308,26 +677,48 @@ def novo_endereco():
     form = EnderecoForm()
 
     if form.validate_on_submit():
-        if form.principal.data:
-            Endereco.query.filter_by(usuario_id=current_user.id).update({"principal": False})
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            if form.principal.data:
+                cur.execute(
+                    """
+                    UPDATE enderecos
+                    SET principal = FALSE
+                    WHERE usuario_id = %s
+                    """,
+                    (current_user.id,)
+                )
 
-        endereco = Endereco(
-            usuario_id=current_user.id,
-            cep=form.cep.data,
-            rua=form.rua.data,
-            numero=form.numero.data,
-            complemento=form.complemento.data,
-            bairro=form.bairro.data,
-            cidade=form.cidade.data,
-            estado=form.estado.data,
-            principal=form.principal.data
-        )
-
-        db.session.add(endereco)
-        db.session.commit()
-
-        flash("Endereço salvo com sucesso!", "success")
-        return redirect(url_for("page_perfil"))
+            cur.execute(
+                """
+                INSERT INTO enderecos (
+                    usuario_id, cep, rua, numero, complemento,
+                    bairro, cidade, estado, principal
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    current_user.id,
+                    form.cep.data,
+                    form.rua.data,
+                    form.numero.data,
+                    form.complemento.data,
+                    form.bairro.data,
+                    form.cidade.data,
+                    form.estado.data,
+                    form.principal.data
+                )
+            )
+            conn.commit()
+            flash("Endereço salvo com sucesso!", "success")
+            return redirect(url_for("page_perfil"))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+            conn.close()
 
     return render_template("endereco_form.html", form=form)
 
@@ -335,52 +726,128 @@ def novo_endereco():
 @app.route("/endereco/editar/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_endereco(id):
-    endereco = Endereco.query.get_or_404(id)
+    endereco = _get_endereco_por_id(id)
 
-    if endereco.usuario_id != current_user.id:
+    if not endereco:
+        abort(404)
+
+    if endereco["usuario_id"] != current_user.id:
         abort(403)
 
-    form = EnderecoForm(obj=endereco)
+    form = EnderecoForm(data=endereco)
 
     if form.validate_on_submit():
-        if form.principal.data:
-            Endereco.query.filter_by(usuario_id=current_user.id).update({"principal": False})
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            if form.principal.data:
+                cur.execute(
+                    """
+                    UPDATE enderecos
+                    SET principal = FALSE
+                    WHERE usuario_id = %s
+                    """,
+                    (current_user.id,)
+                )
 
-        form.populate_obj(endereco)
-        db.session.commit()
+            cur.execute(
+                """
+                UPDATE enderecos
+                SET cep = %s,
+                    rua = %s,
+                    numero = %s,
+                    complemento = %s,
+                    bairro = %s,
+                    cidade = %s,
+                    estado = %s,
+                    principal = %s
+                WHERE id = %s
+                """,
+                (
+                    form.cep.data,
+                    form.rua.data,
+                    form.numero.data,
+                    form.complemento.data,
+                    form.bairro.data,
+                    form.cidade.data,
+                    form.estado.data,
+                    form.principal.data,
+                    id
+                )
+            )
+            conn.commit()
+            flash("Endereço atualizado com sucesso!", "success")
+            return redirect(url_for("page_perfil"))
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+            conn.close()
 
-        flash("Endereço atualizado com sucesso!", "success")
-        return redirect(url_for("page_perfil"))
-
-    return render_template("endereco_form.html", form=form)
+    return render_template("endereco_form.html", form=form, endereco=endereco)
 
 
 @app.route("/endereco/principal/<int:id>", methods=["POST"])
 @login_required
 def definir_endereco_principal(id):
-    endereco = Endereco.query.get_or_404(id)
+    endereco = _get_endereco_por_id(id)
 
-    if endereco.usuario_id != current_user.id:
+    if not endereco:
+        abort(404)
+
+    if endereco["usuario_id"] != current_user.id:
         abort(403)
 
-    Endereco.query.filter_by(usuario_id=current_user.id).update({"principal": False})
-    endereco.principal = True
-    db.session.commit()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE enderecos
+            SET principal = FALSE
+            WHERE usuario_id = %s
+            """,
+            (current_user.id,)
+        )
+        cur.execute(
+            """
+            UPDATE enderecos
+            SET principal = TRUE
+            WHERE id = %s
+            """,
+            (id,)
+        )
+        conn.commit()
+        flash("Endereço principal atualizado!", "success")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
-    flash("Endereço principal atualizado!", "success")
     return redirect(url_for("page_perfil"))
 
 
 @app.route("/endereco/excluir/<int:id>", methods=["POST"])
 @login_required
 def excluir_endereco(id):
-    endereco = Endereco.query.get_or_404(id)
+    endereco = _get_endereco_por_id(id)
 
-    if endereco.usuario_id != current_user.id:
+    if not endereco:
+        abort(404)
+
+    if endereco["usuario_id"] != current_user.id:
         abort(403)
 
-    db.session.delete(endereco)
-    db.session.commit()
+    _execute(
+        """
+        DELETE FROM enderecos
+        WHERE id = %s
+        """,
+        (id,)
+    )
 
     flash("Endereço excluído!", "info")
     return redirect(url_for("page_perfil"))
@@ -398,20 +865,31 @@ def api_carrinho_resumo():
 @app.route("/api/carrinho/adicionar/<int:item_id>", methods=["POST"])
 @login_required
 def api_adicionar_carrinho(item_id):
-    produto = Item.query.get_or_404(item_id)
+    produto = _get_produto_por_id(item_id, apenas_ativo=False)
 
-    cart_item = ItemCarrinho.query.filter_by(
-        usuario_id=current_user.id,
-        item_id=produto.id
-    ).first()
+    if not produto:
+        abort(404)
+
+    cart_item = _get_carrinho_item_por_produto(current_user.id, produto["id"])
 
     if cart_item:
-        cart_item.quantidade += 1
+        _execute(
+            """
+            UPDATE itens_carrinho
+            SET quantidade = quantidade + 1
+            WHERE id = %s
+            """,
+            (cart_item["id"],)
+        )
     else:
-        cart_item = ItemCarrinho(usuario_id=current_user.id, item_id=produto.id, quantidade=1)
-        db.session.add(cart_item)
+        _execute(
+            """
+            INSERT INTO itens_carrinho (usuario_id, item_id, quantidade)
+            VALUES (%s, %s, %s)
+            """,
+            (current_user.id, produto["id"], 1)
+        )
 
-    db.session.commit()
     return jsonify({"success": True, **_carrinho_resumo_reais()})
 
 
@@ -421,30 +899,47 @@ def api_atualizar_carrinho(cart_id):
     data = request.get_json(silent=True) or {}
     quantidade = int(data.get("quantidade", 1))
 
-    cart_item = ItemCarrinho.query.filter_by(
-        id=cart_id,
-        usuario_id=current_user.id
-    ).first_or_404()
+    cart_item = _get_carrinho_item(cart_id, current_user.id)
+
+    if not cart_item:
+        abort(404)
 
     if quantidade <= 0:
-        db.session.delete(cart_item)
+        _execute(
+            """
+            DELETE FROM itens_carrinho
+            WHERE id = %s
+            """,
+            (cart_id,)
+        )
     else:
-        cart_item.quantidade = quantidade
+        _execute(
+            """
+            UPDATE itens_carrinho
+            SET quantidade = %s
+            WHERE id = %s
+            """,
+            (quantidade, cart_id)
+        )
 
-    db.session.commit()
     return jsonify({"success": True, **_carrinho_resumo_reais()})
 
 
 @app.route("/api/carrinho/remover/<int:cart_id>", methods=["POST"])
 @login_required
 def api_remover_carrinho(cart_id):
-    cart_item = ItemCarrinho.query.filter_by(
-        id=cart_id,
-        usuario_id=current_user.id
-    ).first_or_404()
+    cart_item = _get_carrinho_item(cart_id, current_user.id)
 
-    db.session.delete(cart_item)
-    db.session.commit()
+    if not cart_item:
+        abort(404)
+
+    _execute(
+        """
+        DELETE FROM itens_carrinho
+        WHERE id = %s
+        """,
+        (cart_id,)
+    )
 
     return jsonify({"success": True, **_carrinho_resumo_reais()})
 
@@ -455,11 +950,21 @@ def api_remover_carrinho(cart_id):
 @app.route("/favoritar/<int:item_id>")
 @login_required
 def favoritar(item_id):
-    ja_existe = Favorito.query.filter_by(usuario_id=current_user.id, item_id=item_id).first()
+    produto = _get_produto_por_id(item_id)
+
+    if not produto:
+        abort(404)
+
+    ja_existe = _favorito_existe(current_user.id, item_id)
 
     if not ja_existe:
-        db.session.add(Favorito(usuario_id=current_user.id, item_id=item_id))
-        db.session.commit()
+        _execute(
+            """
+            INSERT INTO favoritos (usuario_id, item_id)
+            VALUES (%s, %s)
+            """,
+            (current_user.id, item_id)
+        )
 
     return redirect(url_for("meus_favoritos"))
 
@@ -467,18 +972,20 @@ def favoritar(item_id):
 @app.route("/meus-favoritos")
 @login_required
 def meus_favoritos():
-    favoritos = Favorito.query.filter_by(usuario_id=current_user.id).all()
+    favoritos = _get_favoritos_usuario(current_user.id)
     return render_template("meus_favoritos.html", favoritos=favoritos)
 
 
 @app.route("/remover-favorito/<int:item_id>")
 @login_required
 def remover_favorito(item_id):
-    favorito = Favorito.query.filter_by(usuario_id=current_user.id, item_id=item_id).first()
-
-    if favorito:
-        db.session.delete(favorito)
-        db.session.commit()
+    _execute(
+        """
+        DELETE FROM favoritos
+        WHERE usuario_id = %s AND item_id = %s
+        """,
+        (current_user.id, item_id)
+    )
 
     return redirect(url_for("meus_favoritos"))
 
@@ -495,11 +1002,7 @@ def checkout():
         return redirect(url_for("page_produto"))
 
     total_produtos = _carrinho_total_reais(itens)
-
-    endereco_principal = Endereco.query.filter_by(
-        usuario_id=current_user.id,
-        principal=True
-    ).first()
+    endereco_principal = _get_endereco_principal(current_user.id)
 
     frete_escolhido = _frete_session_get()
     frete_valor = _dec(frete_escolhido["valor"]) if frete_escolhido else Decimal("0.00")
@@ -590,7 +1093,7 @@ def checkout_stripe():
         flash("Selecione um frete antes de pagar.", "warning")
         return redirect(url_for("checkout"))
 
-    endereco = Endereco.query.filter_by(usuario_id=current_user.id, principal=True).first()
+    endereco = _get_endereco_principal(current_user.id)
     if not endereco:
         flash("Cadastre um endereço principal antes de finalizar.", "warning")
         return redirect(url_for("page_perfil"))
@@ -599,48 +1102,80 @@ def checkout_stripe():
     frete_valor = _dec(frete["valor"])
     total_final = (total_produtos + frete_valor).quantize(Decimal("0.01"))
 
-    # cria pedido no banco ANTES do pagamento
-    pedido = Pedido(
-        usuario_id=current_user.id,
-        total_produtos=total_produtos,
-        frete_valor=frete_valor,
-        total_final=total_final,
-        status="aguardando_pagamento",
-        gateway="stripe",
-        status_pagamento="pending",
-        frete_nome=frete["nome"],
-        frete_prazo=int(frete["prazo"]),
-        cep=endereco.cep,
-        rua=endereco.rua,
-        numero=endereco.numero,
-        complemento=endereco.complemento,
-        bairro=endereco.bairro,
-        cidade=endereco.cidade,
-        estado=endereco.estado
-    )
-    db.session.add(pedido)
-    db.session.flush()
+    conn = get_db_connection()
+    cur = conn.cursor()
 
-    for c in itens:
-        db.session.add(ItemPedido(
-            pedido_id=pedido.id,
-            item_id=c.item.id,
-            nome_produto=c.item.nome,
-            quantidade=int(c.quantidade),
-            preco_unitario=_dec(c.item.preco)
-        ))
+    try:
+        cur.execute(
+            """
+            INSERT INTO pedidos (
+                usuario_id, total_produtos, frete_valor, total_final,
+                status, gateway, status_pagamento, frete_nome, frete_prazo,
+                cep, rua, numero, complemento, bairro, cidade, estado
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                current_user.id,
+                total_produtos,
+                frete_valor,
+                total_final,
+                "aguardando_pagamento",
+                "stripe",
+                "pending",
+                frete["nome"],
+                int(frete["prazo"]),
+                endereco["cep"],
+                endereco["rua"],
+                endereco["numero"],
+                endereco["complemento"],
+                endereco["bairro"],
+                endereco["cidade"],
+                endereco["estado"],
+            )
+        )
+        pedido_row = cur.fetchone()
+        pedido_id = pedido_row["id"]
 
-    db.session.commit()
+        for c in itens:
+            cur.execute(
+                """
+                INSERT INTO itens_pedido (
+                    pedido_id, item_id, nome_produto, quantidade, preco_unitario
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    pedido_id,
+                    c["item"]["id"],
+                    c["item"]["nome"],
+                    int(c["quantidade"]),
+                    _dec(c["item"]["preco"])
+                )
+            )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        raise
+
+    finally:
+        cur.close()
+        conn.close()
 
     try:
         session_checkout = stripe.checkout.Session.create(
             mode="payment",
-            client_reference_id=str(pedido.id),
+            client_reference_id=str(pedido_id),
             success_url=url_for("stripe_sucesso", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url=url_for("stripe_cancelado", pedido_id=pedido.id, _external=True),
+            cancel_url=url_for("stripe_cancelado", pedido_id=pedido_id, _external=True),
             customer_email=current_user.email,
             metadata={
-                "pedido_id": str(pedido.id),
+                "pedido_id": str(pedido_id),
                 "usuario_id": str(current_user.id),
             },
             line_items=[
@@ -648,7 +1183,7 @@ def checkout_stripe():
                     "price_data": {
                         "currency": "brl",
                         "product_data": {
-                            "name": f"Pedido #{pedido.id} - {len(itens)} item(ns)"
+                            "name": f"Pedido #{pedido_id} - {len(itens)} item(ns)"
                         },
                         "unit_amount": _to_cents(total_produtos),
                     },
@@ -667,14 +1202,26 @@ def checkout_stripe():
             ]
         )
 
-        pedido.transacao_id = session_checkout.id
-        db.session.commit()
+        _execute(
+            """
+            UPDATE pedidos
+            SET transacao_id = %s
+            WHERE id = %s
+            """,
+            (session_checkout.id, pedido_id)
+        )
 
         return redirect(session_checkout.url, code=303)
 
     except Exception as e:
-        pedido.status_pagamento = "error"
-        db.session.commit()
+        _execute(
+            """
+            UPDATE pedidos
+            SET status_pagamento = %s
+            WHERE id = %s
+            """,
+            ("error", pedido_id)
+        )
         flash(f"Erro ao iniciar pagamento Stripe: {e}", "danger")
         return redirect(url_for("checkout"))
 
@@ -693,15 +1240,25 @@ def stripe_sucesso():
         pedido_id = checkout_session.metadata.get("pedido_id") if checkout_session.metadata else None
 
         if pedido_id:
-            pedido = Pedido.query.get(int(pedido_id))
+            pedido = _get_pedido_por_id(int(pedido_id))
             if pedido and checkout_session.payment_status == "paid":
-                pedido.status = "pago"
-                pedido.status_pagamento = "paid"
-                pedido.transacao_id = checkout_session.payment_intent or checkout_session.id
+                _execute(
+                    """
+                    UPDATE pedidos
+                    SET status = %s,
+                        status_pagamento = %s,
+                        transacao_id = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        "pago",
+                        "paid",
+                        checkout_session.payment_intent or checkout_session.id,
+                        int(pedido_id)
+                    )
+                )
 
-                # limpa carrinho do usuário
-                ItemCarrinho.query.filter_by(usuario_id=current_user.id).delete()
-                db.session.commit()
+                _limpar_carrinho_usuario(current_user.id)
                 _frete_session_clear()
 
         flash("Pagamento aprovado com sucesso!", "success")
@@ -714,14 +1271,23 @@ def stripe_sucesso():
 @app.route("/stripe/cancelado/<int:pedido_id>")
 @login_required
 def stripe_cancelado(pedido_id):
-    pedido = Pedido.query.get_or_404(pedido_id)
+    pedido = _get_pedido_por_id(pedido_id)
 
-    if pedido.usuario_id != current_user.id:
+    if not pedido:
+        abort(404)
+
+    if pedido["usuario_id"] != current_user.id:
         abort(403)
 
-    pedido.status = "aguardando_pagamento"
-    pedido.status_pagamento = "canceled"
-    db.session.commit()
+    _execute(
+        """
+        UPDATE pedidos
+        SET status = %s,
+            status_pagamento = %s
+        WHERE id = %s
+        """,
+        ("aguardando_pagamento", "canceled", pedido_id)
+    )
 
     flash("Pagamento cancelado.", "warning")
     return redirect(url_for("checkout"))
@@ -754,15 +1320,24 @@ def stripe_webhook():
             pedido_id = session_obj["metadata"].get("pedido_id")
 
         if pedido_id:
-            pedido = Pedido.query.get(int(pedido_id))
+            pedido = _get_pedido_por_id(int(pedido_id))
             if pedido:
-                pedido.status = "pago"
-                pedido.status_pagamento = "paid"
-                pedido.transacao_id = session_obj.get("payment_intent") or session_obj.get("id")
-
-                # limpa carrinho do usuário dono do pedido
-                ItemCarrinho.query.filter_by(usuario_id=pedido.usuario_id).delete()
-                db.session.commit()
+                _execute(
+                    """
+                    UPDATE pedidos
+                    SET status = %s,
+                        status_pagamento = %s,
+                        transacao_id = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        "pago",
+                        "paid",
+                        session_obj.get("payment_intent") or session_obj.get("id"),
+                        int(pedido_id)
+                    )
+                )
+                _limpar_carrinho_usuario(pedido["usuario_id"])
 
     elif event["type"] == "checkout.session.expired":
         session_obj = event["data"]["object"]
@@ -772,40 +1347,31 @@ def stripe_webhook():
             pedido_id = session_obj["metadata"].get("pedido_id")
 
         if pedido_id:
-            pedido = Pedido.query.get(int(pedido_id))
+            pedido = _get_pedido_por_id(int(pedido_id))
             if pedido:
-                pedido.status_pagamento = "expired"
-                db.session.commit()
+                _execute(
+                    """
+                    UPDATE pedidos
+                    SET status_pagamento = %s
+                    WHERE id = %s
+                    """,
+                    ("expired", int(pedido_id))
+                )
 
     return "ok", 200
+
 
 # =========================================================
 # PRODUTO DETALHE
 # =========================================================
 @app.route("/produto/<int:item_id>")
 def produto_detalhe(item_id):
-    item = Item.query.filter_by(id=item_id, ativo=True).first_or_404()
+    item = _get_produto_por_id(item_id, apenas_ativo=True)
 
-    relacionados_query = Item.query.filter(
-        Item.ativo == True,
-        Item.id != item.id
-    )
+    if not item:
+        abort(404)
 
-    if item.categoria_id:
-        relacionados_query = relacionados_query.filter(
-            Item.categoria_id == item.categoria_id
-        )
-    elif item.marca_id:
-        relacionados_query = relacionados_query.filter(
-            Item.marca_id == item.marca_id
-        )
-
-    relacionados = (
-        relacionados_query
-        .order_by(Item.data_criacao.desc())
-        .limit(8)
-        .all()
-    )
+    relacionados = _get_relacionados(item, 8)
 
     return render_template(
         "produto_detalhe.html",
@@ -842,72 +1408,76 @@ def login_google_callback():
         avatar = user_info.get("picture")
 
         if not google_id or not email:
-            flash(
-                "Não foi possível obter os dados da conta Google.",
-                "danger"
-            )
+            flash("Não foi possível obter os dados da conta Google.", "danger")
             return redirect(url_for("page_login"))
 
-        usuario = User.query.filter(
-            db.or_(
-                User.google_id == google_id,
-                User.email == email
-            )
-        ).first()
+        usuario = User.get_by_google_id(google_id)
+
+        if not usuario:
+            usuario = User.get_by_email(email)
 
         # =========================
         # USUÁRIO JÁ EXISTE
         # =========================
         if usuario:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            try:
+                if not usuario.google_id:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET google_id = %s
+                        WHERE id = %s
+                        """,
+                        (google_id, usuario.id)
+                    )
+                    usuario.google_id = google_id
 
-            if not usuario.google_id:
-                usuario.google_id = google_id
+                if not usuario.avatar and avatar:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET avatar = %s
+                        WHERE id = %s
+                        """,
+                        (avatar, usuario.id)
+                    )
+                    usuario.avatar = avatar
 
-            if not usuario.avatar:
-                usuario.avatar = avatar
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                cur.close()
+                conn.close()
 
         # =========================
         # NOVO USUÁRIO
         # =========================
         else:
-
-            base_username = "".join(
-                ch for ch in nome.lower().replace(" ", "_")
-                if ch.isalnum() or ch == "_"
-            ) or email.split("@")[0]
-
+            base_username = _slugify_username(nome)
             username_final = base_username
             contador = 1
 
-            while User.query.filter_by(
-                usuario=username_final
-            ).first():
-
+            while User.get_by_usuario(username_final):
                 username_final = f"{base_username}_{contador}"
                 contador += 1
 
-            usuario = User(
+            usuario = User.create(
                 usuario=username_final,
                 email=email,
                 google_id=google_id,
                 avatar=avatar,
+                senha=uuid.uuid4().hex,
                 role="cliente",
                 is_admin=False
             )
 
-            # senha aleatória (exigência do banco)
-            usuario.set_senha(uuid.uuid4().hex)
-
-            db.session.add(usuario)
-
-        db.session.commit()
-
         login_user(usuario)
 
-        flash(
-            "Login com Google realizado com sucesso!",
-            "success"
-        )
+        flash("Login com Google realizado com sucesso!", "success")
 
         if usuario.is_admin:
             return redirect(url_for("admin.dashboard"))
@@ -915,19 +1485,9 @@ def login_google_callback():
         return redirect(url_for("page_produto"))
 
     except OAuthError as e:
-
-        flash(
-            f"Erro OAuth Google: {str(e)}",
-            "danger"
-        )
-
+        flash(f"Erro OAuth Google: {str(e)}", "danger")
         return redirect(url_for("page_login"))
 
     except Exception as e:
-
-        flash(
-            f"Erro geral Google Login: {str(e)}",
-            "danger"
-        )
-
+        flash(f"Erro geral Google Login: {str(e)}", "danger")
         return redirect(url_for("page_login"))
